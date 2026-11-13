@@ -1,0 +1,1415 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>في طريقك — واجهات الزبون والكابتن</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/h3-js@4.1.0/dist/h3-js.umd.js"></script>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --panel2:#1d232c; --line:#2a313c;
+    --text:#e9edf2; --muted:#8b96a5; --accent:#22c55e; --accent2:#16a34a;
+    --warn:#f59e0b; --danger:#ef4444; --blue:#3b82f6; --purple:#a855f7;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:Cairo,system-ui,sans-serif;}
+  header.top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 28px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:22px}
+  .brand svg{flex:none}
+  .brand small{display:block;font-weight:400;font-size:12px;color:var(--muted)}
+  .stats{display:flex;gap:10px;flex-wrap:wrap}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 12px;font-size:12px;color:var(--muted)}
+  .stat b{color:var(--text);font-size:14px;margin-inline-start:4px;font-variant-numeric:tabular-nums}
+  .tabs{display:none;gap:6px;padding:12px 16px 0}
+  .tabs button{flex:1}
+  main{display:flex;gap:28px;justify-content:center;align-items:flex-start;padding:24px;flex-wrap:wrap}
+  .col{display:flex;flex-direction:column;align-items:center;gap:10px}
+  .col h2{margin:0;font-size:15px;color:var(--muted);font-weight:600}
+  .phone{width:360px;height:740px;border-radius:44px;background:#000;padding:10px;box-shadow:0 30px 60px rgba(0,0,0,.5),0 0 0 1px #2b2f36 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:36px;overflow:hidden;position:relative;background:#14181f}
+  .notch{position:absolute;top:10px;left:50%;transform:translateX(-50%);width:110px;height:28px;background:#000;border-radius:0 0 16px 16px;z-index:20}
+  canvas.map{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
+  .statusbar{position:absolute;top:0;inset-inline:0;height:40px;display:flex;justify-content:space-between;align-items:center;padding:0 26px;font-size:12px;font-weight:700;z-index:15;pointer-events:none}
+  .topbar{position:absolute;top:46px;inset-inline:12px;z-index:10;display:flex;gap:8px;align-items:center}
+  .pill{background:rgba(22,27,34,.92);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:999px;padding:8px 14px;font-size:13px;display:flex;align-items:center;gap:8px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block}
+  .dot.on{background:var(--accent);box-shadow:0 0 0 4px rgba(34,197,94,.2)}
+  .sheet{position:absolute;bottom:0;inset-inline:0;z-index:10;background:var(--panel);border-radius:24px 24px 0 0;border-top:1px solid var(--line);padding:10px 16px 20px;box-shadow:0 -10px 30px rgba(0,0,0,.4);max-height:72%;overflow:auto;transition:all .25s}
+  .sheet .grab{width:40px;height:4px;border-radius:4px;background:var(--line);margin:0 auto 10px}
+  .sheet h3{margin:4px 0 8px;font-size:18px}
+  .muted{color:var(--muted);font-size:13px}
+  .row{display:flex;align-items:center;gap:10px}
+  .between{justify-content:space-between}
+  .field{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:10px 12px;display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:14px}
+  .field .ic{width:10px;height:10px;border-radius:50%}
+  .field .ic.sq{border-radius:2px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px}
+  .chip{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:12.5px;cursor:pointer;color:var(--text);font-family:inherit}
+  .chip:hover{border-color:var(--accent)}
+  button.btn{width:100%;border:0;border-radius:14px;padding:13px;font-family:inherit;font-size:16px;font-weight:700;cursor:pointer;background:var(--accent);color:#06210f;transition:transform .05s, opacity .2s}
+  button.btn:active{transform:scale(.98)}
+  button.btn:disabled{opacity:.35;cursor:not-allowed}
+  button.btn.ghost{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
+  button.btn.danger{background:transparent;color:var(--danger);border:1px solid rgba(239,68,68,.4)}
+  button.btn.small{padding:9px;font-size:14px}
+  .types{display:flex;flex-direction:column;gap:6px;margin:6px 0 12px}
+  .type{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:14px;border:1.5px solid var(--line);background:var(--panel2);cursor:pointer}
+  .type.sel{border-color:var(--accent);background:rgba(34,197,94,.08)}
+  .type .car{font-size:24px}
+  .type .grow{flex:1}
+  .type b{font-size:15px}
+  .price{font-weight:800;font-size:16px;font-variant-numeric:tabular-nums}
+  .driver-card{display:flex;align-items:center;gap:12px;background:var(--panel2);border:1px solid var(--line);border-radius:16px;padding:12px;margin:8px 0}
+  .avatar{width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#334155,#1e293b);display:grid;place-items:center;font-weight:800;font-size:18px;flex:none}
+  .plate{background:#f8fafc;color:#0f172a;border-radius:6px;padding:2px 8px;font-weight:800;font-size:13px;border:2px solid #0f172a;white-space:nowrap}
+  .steps{display:flex;gap:4px;margin:10px 0}
+  .steps div{flex:1;height:4px;border-radius:4px;background:var(--line)}
+  .steps div.done{background:var(--accent)}
+  .steps div.cur{background:linear-gradient(90deg,var(--accent),var(--line));animation:pulse 1.2s infinite}
+  @keyframes pulse{50%{opacity:.5}}
+  .stars{display:flex;gap:6px;justify-content:center;margin:12px 0;direction:ltr}
+  .stars span{font-size:34px;cursor:pointer;color:#475569;transition:transform .1s}
+  .stars span.on{color:#facc15}
+  .stars span:hover{transform:scale(1.15)}
+  .receipt{background:var(--panel2);border-radius:14px;padding:10px 14px;border:1px solid var(--line);font-size:14px}
+  .receipt .row{padding:4px 0}
+  .search-anim{display:flex;align-items:center;gap:12px;margin:6px 0 14px}
+  .radar{width:44px;height:44px;border-radius:50%;border:2px solid var(--accent);position:relative;flex:none}
+  .radar::after{content:"";position:absolute;inset:-2px;border-radius:50%;border:2px solid var(--accent);animation:ping 1.4s infinite}
+  @keyframes ping{to{transform:scale(1.9);opacity:0}}
+  .offer{border:2px solid var(--accent);border-radius:18px;padding:14px;background:linear-gradient(180deg,rgba(34,197,94,.1),transparent)}
+  .timer{width:52px;height:52px;position:relative;flex:none}
+  .timer svg{transform:rotate(-90deg)}
+  .timer span{position:absolute;inset:0;display:grid;place-items:center;font-weight:800}
+  .kv{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+  .kv div{background:var(--panel2);border-radius:12px;padding:8px 10px;border:1px solid var(--line)}
+  .kv b{display:block;font-size:17px;font-variant-numeric:tabular-nums}
+  .toggle{width:100%;display:flex;align-items:center;justify-content:space-between;padding:14px;border-radius:16px;background:var(--panel2);border:1px solid var(--line);cursor:pointer;font-family:inherit;color:var(--text);font-size:16px;font-weight:700}
+  .switch{width:50px;height:28px;border-radius:99px;background:#334155;position:relative;transition:.2s;flex:none}
+  .switch::after{content:"";position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:.2s}
+  .switch.on{background:var(--accent)}
+  .switch.on::after{right:25px}
+  .banner{padding:10px 12px;border-radius:12px;font-size:13.5px;margin:8px 0}
+  .banner.warn{background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.4);color:#fcd34d}
+  .banner.ok{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.4);color:#86efac}
+  .banner.err{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);color:#fca5a5}
+  .overlay{position:absolute;inset:0;z-index:26;background:var(--panel);display:flex;flex-direction:column;padding:50px 18px 18px;overflow:auto;animation:fade .18s ease-out}
+  .overlay:empty,.drawer-wrap:empty{display:none}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}}
+  .drawer-wrap{position:absolute;inset:0;z-index:26}
+  .drawer-bg{position:absolute;inset:0;background:rgba(0,0,0,.55)}
+  .drawer{position:absolute;top:0;bottom:0;right:0;width:80%;background:var(--panel);padding:54px 14px 16px;box-shadow:-10px 0 30px rgba(0,0,0,.5);animation:slide .2s ease-out;display:flex;flex-direction:column}
+  @keyframes slide{from{transform:translateX(100%)}}
+  .menu-item{display:flex;gap:12px;align-items:center;padding:13px 10px;border-radius:12px;cursor:pointer;font-size:15px}
+  .menu-item:hover{background:var(--panel2)}
+  .menu-item .mi{width:34px;height:34px;border-radius:10px;background:var(--panel2);display:grid;place-items:center;font-size:17px}
+  .ohead{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .ohead h3{margin:0;font-size:19px}
+  .back{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:18px;cursor:pointer;display:grid;place-items:center}
+  .input{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 14px;color:var(--text);font-family:inherit;font-size:15px;margin:4px 0 12px;outline:none}
+  .input:focus{border-color:var(--accent)}
+  label.lbl{font-size:13px;color:var(--muted)}
+  .lrow{display:flex;align-items:center;gap:12px;padding:12px 2px;border-bottom:1px solid var(--line)}
+  .lrow:last-child{border-bottom:0}
+  .lrow .grow{flex:1;min-width:0}
+  .lrow .ttl{font-weight:700;font-size:14.5px}
+  .empty{text-align:center;color:var(--muted);padding:40px 10px}
+  .empty div{font-size:40px;margin-bottom:8px}
+  .field.clickable{cursor:pointer}
+  .field.active{border-color:var(--accent);box-shadow:0 0 0 3px rgba(34,197,94,.15)}
+  .pay{display:flex;align-items:center;gap:12px;padding:12px;border:1.5px solid var(--line);border-radius:14px;margin-bottom:8px;cursor:pointer;background:var(--panel2)}
+  .pay.sel{border-color:var(--accent);background:rgba(34,197,94,.08)}
+  .pay .grow{flex:1}
+  .login-logo{display:flex;flex-direction:column;align-items:center;gap:8px;margin:10px 0 22px}
+  .login-logo b{font-size:26px;font-weight:800}
+  .bars{display:flex;align-items:flex-end;gap:6px;height:90px;margin:8px 0 4px;direction:ltr}
+  .bars div{flex:1;background:var(--accent);border-radius:5px 5px 0 0;min-height:3px;opacity:.85}
+  .bars-l{display:flex;gap:6px;direction:ltr;font-size:10.5px;color:var(--muted)}
+  .bars-l span{flex:1;text-align:center}
+  .pill.btnish{cursor:pointer}
+  .toast{position:absolute;top:92px;inset-inline:14px;z-index:30;background:#0b0f14;border:1px solid var(--line);border-radius:14px;padding:10px 12px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);animation:drop .3s ease-out}
+  .toast b{display:block;font-size:14px}
+  @keyframes drop{from{transform:translateY(-16px);opacity:0}}
+  /* لوحة السيرفر */
+  .server{width:min(760px,100%);background:var(--panel);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+  .server .hd{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);gap:10px;flex-wrap:wrap}
+  .server .hd b{font-size:15px}
+  .server label{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer}
+  .log{height:300px;overflow:auto;padding:8px 0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;direction:ltr;text-align:left}
+  .log div{padding:3px 16px;display:flex;gap:8px;align-items:baseline}
+  .log div:hover{background:var(--panel2)}
+  .log time{color:#57606a;flex:none}
+  .tag{flex:none;border-radius:5px;padding:0 6px;font-weight:700;font-size:11px;min-width:52px;text-align:center}
+  .t-WS{background:#1e3a5f;color:#93c5fd}.t-H3{background:#3b2a5c;color:#d8b4fe}.t-CAS{background:#4a3410;color:#fcd34d}
+  .t-FSM{background:#123d2a;color:#86efac}.t-QUEUE{background:#4c1d3a;color:#f9a8d4}.t-SYS{background:#2a313c;color:#cbd5e1}
+  .t-PAY{background:#0f3d3d;color:#5eead4}.t-NOTIF{background:#3d2f0f;color:#fde68a}.t-RATE{background:#3d0f1f;color:#fda4af}.t-ACCT{background:#1f2a3d;color:#a5b4fc}
+  .log .bad{color:#fca5a5}.log .good{color:#86efac}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;padding:8px 16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+  .services{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--line)}
+  .svc{font-size:11.5px;border:1px solid var(--line);border-radius:8px;padding:3px 8px;color:var(--muted);transition:.2s}
+  .svc.flash{border-color:var(--accent);color:var(--text);background:rgba(34,197,94,.12)}
+  /* وضع التطبيق الواحد (الزبون لوحده أو الكابتن لوحده) */
+  body.single header.top, body.single .tabs, body.single .col h2, body.single [data-col="server"]{display:none}
+  body.single main{padding:0;min-height:100vh;min-height:100dvh;align-items:center}
+  body.app-rider [data-col="driver"], body.app-driver [data-col="rider"]{display:none!important}
+  body.single .phone{height:min(780px,calc(100dvh - 32px))}
+  @media (max-width: 560px), (display-mode: standalone){
+    body.single main{display:block}
+    body.single .phone{width:100vw;height:100vh;height:100dvh;border-radius:0;padding:0;box-shadow:none}
+    body.single .screen{border-radius:0}
+    body.single .notch, body.single .statusbar{display:none}
+    body.single .topbar{top:calc(12px + env(safe-area-inset-top))}
+    body.single .overlay{padding-top:calc(24px + env(safe-area-inset-top))}
+    body.single .sheet{padding-bottom:calc(20px + env(safe-area-inset-bottom))}
+    body.single .toast{top:calc(64px + env(safe-area-inset-top))}
+  }
+  @media (max-width: 820px){
+    .tabs{display:flex}
+    main{padding:12px}
+    .col.hide-m{display:none}
+    .phone{width:min(360px,100%)}
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><svg width="34" height="34" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs><clipPath id="logopin"><path d="M256 452C256 452 116 304 116 206a140 140 0 0 1 280 0c0 98-140 246-140 246Z"/></clipPath></defs>
+  <rect width="512" height="512" rx="116" fill="#fff"/>
+  <path d="M256 452C256 452 116 304 116 206a140 140 0 0 1 280 0c0 98-140 246-140 246Z" fill="#000"/>
+  <g clip-path="url(#logopin)">
+    <path d="M308.0 480.0 L307.1 476.5 L306.4 473.0 L305.9 469.6 L305.5 466.3 L305.2 463.0 L304.9 459.7 L304.7 456.5 L304.6 453.3 L304.5 450.2 L304.5 447.1 L304.5 444.0 L304.6 440.9 L304.7 437.9 L304.9 434.9 L305.1 432.0 L305.3 429.0 L305.6 426.1 L305.9 423.1 L306.3 420.2 L306.7 417.3 L307.1 414.4 L307.6 411.6 L308.0 408.7 L308.5 405.8 L309.1 402.9 L309.6 400.0 L310.2 397.2 L310.8 394.3 L311.4 391.4 L312.0 388.5 L312.6 385.6 L313.2 382.7 L313.9 379.7 L314.5 376.8 L315.1 373.8 L315.7 370.9 L316.4 367.9 L316.9 364.9 L317.5 361.8 L318.1 358.8 L318.6 355.7 L319.1 352.6 L319.6 349.4 L320.0 346.3 L320.4 343.1 L320.8 339.9 L321.0 336.6 L321.3 333.3 L321.4 330.0 L321.5 326.7 L321.6 323.3 L321.5 320.0 L321.4 316.6 L321.2 313.1 L320.9 309.7 L320.5 306.2 L320.0 302.8 L319.4 299.3 L318.7 295.8 L317.8 291.9 L316.9 288.8 L316.0 285.8 L315.0 283.0 L313.9 280.2 L312.8 277.5 L311.7 274.8 L310.5 272.3 L309.2 269.9 L307.9 267.5 L306.6 265.2 L305.3 263.0 L303.9 260.9 L302.5 258.9 L301.1 256.9 L299.7 255.1 L298.3 253.3 L296.9 251.5 L295.5 249.9 L294.1 248.3 L292.7 246.7 L291.3 245.2 L290.0 243.8 L288.6 242.4 L287.3 241.1 L286.0 239.8 L284.7 238.5 L283.5 237.3 L282.3 236.2 L281.1 235.0 L279.9 233.9 L278.8 232.8 L277.7 231.7 L276.7 230.6 L275.7 229.6 L274.7 228.5 L273.7 227.5 L272.8 226.5 L271.9 225.4 L271.0 224.4 L270.2 223.3 L269.4 222.3 L268.7 221.2 L268.0 220.1 L267.3 218.9 L266.6 217.7 L266.0 216.5 L265.4 215.2 L264.9 213.8 L264.4 212.4 L263.9 210.9 L263.5 209.4 L263.2 207.8 L262.9 206.1 L262.7 204.3 L262.5 202.4 L262.4 200.4 L262.4 198.4 L262.4 196.2 L262.6 194.0 L262.8 191.6 L249.2 188.4 L248.3 191.0 L247.5 193.5 L246.8 196.0 L246.1 198.4 L245.6 200.9 L245.1 203.3 L244.7 205.6 L244.4 208.0 L244.1 210.3 L244.0 212.5 L243.9 214.8 L243.9 217.0 L243.9 219.2 L244.0 221.4 L244.3 223.5 L244.5 225.7 L244.9 227.8 L245.3 229.8 L245.7 231.9 L246.2 233.9 L246.8 235.8 L247.4 237.8 L248.0 239.7 L248.7 241.5 L249.3 243.4 L250.1 245.2 L250.8 246.9 L251.5 248.7 L252.3 250.4 L253.1 252.1 L253.8 253.8 L254.6 255.5 L255.3 257.1 L256.1 258.7 L256.8 260.3 L257.5 261.9 L258.2 263.5 L258.9 265.0 L259.5 266.6 L260.2 268.1 L260.8 269.6 L261.4 271.1 L261.9 272.7 L262.4 274.2 L262.9 275.7 L263.3 277.2 L263.8 278.7 L264.2 280.2 L264.5 281.8 L264.8 283.3 L265.1 284.8 L265.4 286.4 L265.6 288.0 L265.8 289.6 L265.9 291.3 L266.1 293.0 L266.1 294.7 L266.2 296.4 L266.2 298.3 L266.2 300.1 L266.0 301.8 L265.9 303.8 L265.7 305.8 L265.4 307.8 L265.1 309.7 L264.7 311.6 L264.3 313.5 L263.8 315.4 L263.3 317.3 L262.7 319.2 L262.1 321.1 L261.4 323.0 L260.7 325.0 L259.9 326.9 L259.1 328.9 L258.2 330.9 L257.3 333.0 L256.4 335.1 L255.4 337.2 L254.4 339.3 L253.3 341.5 L252.2 343.7 L251.0 346.0 L249.8 348.4 L248.6 350.8 L247.3 353.2 L246.1 355.7 L244.7 358.2 L243.4 360.8 L242.0 363.5 L240.6 366.2 L239.2 369.0 L237.8 371.9 L236.3 374.8 L234.9 377.8 L233.4 380.9 L231.9 384.0 L230.5 387.3 L229.0 390.5 L227.5 393.9 L226.1 397.4 L224.6 400.9 L223.2 404.5 L221.8 408.2 L220.4 412.0 L219.1 415.9 L217.7 419.9 L216.5 424.0 L215.2 428.1 L214.0 432.3 L212.8 436.7 L211.7 441.1 L210.6 445.6 L209.6 450.2 L208.6 455.0 L207.6 459.8 L206.7 464.7 L205.9 469.7 L205.0 474.8 L204.0 480.0Z" fill="#fff"/>
+    <path d="M258.1 447.2 L258.6 443.4 L259.2 439.7 L259.8 436.0 L260.5 432.4 L261.2 428.9 L262.0 425.4 L262.8 422.0" stroke="#000" stroke-width="7.5" stroke-linecap="round" fill="none"/><path d="M274.0 384.5 L275.0 381.7 L276.0 378.8 L277.0 376.0 L278.0 373.2 L279.0 370.5 L280.0 367.7" stroke="#000" stroke-width="6.1" stroke-linecap="round" fill="none"/><path d="M289.1 338.6 L289.8 336.0 L290.3 333.4 L290.9 330.8 L291.3 328.2 L291.7 325.6" stroke="#000" stroke-width="5.1" stroke-linecap="round" fill="none"/><path d="M292.4 298.8 L292.0 296.0 L291.6 293.5 L291.1 291.1 L290.6 288.8" stroke="#000" stroke-width="4.2" stroke-linecap="round" fill="none"/><path d="M284.0 270.6 L283.1 268.8 L282.2 267.1 L281.3 265.4" stroke="#000" stroke-width="3.5" stroke-linecap="round" fill="none"/><path d="M272.4 251.5 L271.4 250.1 L270.4 248.6" stroke="#000" stroke-width="2.9" stroke-linecap="round" fill="none"/>
+  </g>
+  <circle cx="256" cy="178" r="26" fill="#fff"/>
+</svg><div>في طريقك<small>نموذج تفاعلي لتطبيق الزبون وتطبيق الكابتن</small></div></div>
+  <div class="stats">
+    <div class="stat">سواقين أونلاين<b id="s-online">0</b></div>
+    <div class="stat">تحديثات لوكيشن / ث<b id="s-ups">0</b></div>
+    <div class="stat">آخر بحث H3<b id="s-h3">—</b></div>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="chip" data-tab="rider">📱 الزبون</button>
+  <button class="chip" data-tab="driver">🚗 الكابتن</button>
+  <button class="chip" data-tab="server">🖥️ السيرفر</button>
+</div>
+
+<main>
+  <section class="col" data-col="rider">
+    <h2>تطبيق الزبون</h2>
+    <div class="phone"><div class="screen" id="rider">
+      <div class="notch"></div>
+      <div class="statusbar"><span id="clock1">9:41</span><span>●●●● 5G</span></div>
+      <canvas class="map" id="riderMap"></canvas>
+      <div class="topbar" id="riderTop"></div>
+      <div class="sheet" id="riderSheet"></div>
+      <div class="drawer-wrap" id="riderDrawer"></div>
+      <div class="overlay" id="riderOverlay"></div>
+    </div></div>
+  </section>
+
+  <section class="col" data-col="driver">
+    <h2>تطبيق الكابتن</h2>
+    <div class="phone"><div class="screen" id="driver">
+      <div class="notch"></div>
+      <div class="statusbar"><span id="clock2">9:41</span><span>●●●● 5G</span></div>
+      <canvas class="map" id="driverMap"></canvas>
+      <div class="topbar" id="driverTop"></div>
+      <div class="sheet" id="driverSheet"></div>
+      <div class="drawer-wrap" id="driverDrawer"></div>
+      <div class="overlay" id="driverOverlay"></div>
+    </div></div>
+  </section>
+
+  <section class="col" data-col="server" style="width:min(760px,100%)">
+    <h2>اللي بيحصل في السيرفر</h2>
+    <div class="server">
+      <div class="services" id="services">
+        <span class="svc" data-svc="gateway">WebSocket Gateway</span>
+        <span class="svc" data-svc="location">Location Service · H3</span>
+        <span class="svc" data-svc="dispatch">Dispatch Service</span>
+        <span class="svc" data-svc="trip">Trip Service · FSM</span>
+        <span class="svc" data-svc="queue">Message Queue</span>
+        <span class="svc" data-svc="payment">Payment</span>
+        <span class="svc" data-svc="notification">Notifications</span>
+        <span class="svc" data-svc="rating">Rating</span>
+        <span class="svc" data-svc="accounting">Accounting</span>
+      </div>
+      <div class="hd">
+        <b>سجل الأحداث</b>
+        <div class="row" style="gap:14px;flex-wrap:wrap">
+          <label><input type="checkbox" id="forceRace"> كابتن تاني يقبل في نفس اللحظة (اختبار السباق)</label>
+          <label><input type="checkbox" id="showWs"> اعرض رسايل اللوكيشن</label>
+        </div>
+      </div>
+      <div class="log" id="log"></div>
+      <div class="legend">
+        <span>WS = رسايل WebSocket</span><span>H3 = بحث الخلايا</span><span>CAS = Conditional Update</span><span>FSM = State Machine</span><span>QUEUE = Message Queue</span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+// =====================================================================
+//  ثوابت وأدوات جغرافية
+// =====================================================================
+const CENTER = { lat: 30.0444, lng: 31.2357 };      // ميدان التحرير
+const RES = 8;                                       // دقة H3 للعرض والبحث (~460م ضلع الخلية)
+const M_PER_DEG_LAT = 111320;
+const M_PER_DEG_LNG = 111320 * Math.cos(CENTER.lat * Math.PI / 180);
+const SIM_SPEED = 9;                                 // تسريع الزمن في المحاكاة
+const fmtMoney = (c) => (c / 100).toFixed(2) + " ج.م";
+const ar = (n) => String(n).replace(/\d/g, d => "٠١٢٣٤٥٦٧٨٩"[d]);
+
+function dist(a, b) {
+  const R = 6371000, r = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * r, dLng = (b.lng - a.lng) * r;
+  const h = Math.sin(dLat/2)**2 + Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dLng/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+function offset(p, dxM, dyM) { return { lat: p.lat + dyM / M_PER_DEG_LAT, lng: p.lng + dxM / M_PER_DEG_LNG }; }
+function moveToward(p, target, meters) {
+  const d = dist(p, target);
+  if (d <= meters) return { ...target };
+  const t = meters / d;
+  return { lat: p.lat + (target.lat - p.lat) * t, lng: p.lng + (target.lng - p.lng) * t };
+}
+function bearing(a, b) { return Math.atan2((b.lng - a.lng) * M_PER_DEG_LNG, (b.lat - a.lat) * M_PER_DEG_LAT); }
+function rand(a, b) { return a + Math.random() * (b - a); }
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+const PLACES = [
+  { name: "ميدان التحرير", p: offset(CENTER, 0, 0) },
+  { name: "الزمالك", p: offset(CENTER, -1400, 1900) },
+  { name: "جاردن سيتي", p: offset(CENTER, 300, -1300) },
+  { name: "وسط البلد", p: offset(CENTER, 1300, 900) },
+  { name: "الدقي", p: offset(CENTER, -2300, -200) },
+  { name: "رمسيس", p: offset(CENTER, 1500, 2600) },
+  { name: "المنيل", p: offset(CENTER, -300, -2600) },
+];
+function placeName(p) {
+  let best = null;
+  for (const pl of PLACES) { const d = dist(p, pl.p); if (!best || d < best.d) best = { d, name: pl.name }; }
+  if (!best) return "نقطة على الخريطة";
+  return best.d < 250 ? best.name : best.d < 1500 ? "قرب " + best.name : "نقطة على الخريطة";
+}
+const LOGO_SVG = (size) => `<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs><clipPath id="lp${size}"><path d="M256 452C256 452 116 304 116 206a140 140 0 0 1 280 0c0 98-140 246-140 246Z"/></clipPath></defs>
+  <rect width="512" height="512" rx="116" fill="#fff"/>
+  <path d="M256 452C256 452 116 304 116 206a140 140 0 0 1 280 0c0 98-140 246-140 246Z" fill="#000"/>
+  <g clip-path="url(#lp${size})">
+    <path d="M308.0 480.0 L307.1 476.5 L306.4 473.0 L305.9 469.6 L305.5 466.3 L305.2 463.0 L304.9 459.7 L304.7 456.5 L304.6 453.3 L304.5 450.2 L304.5 447.1 L304.5 444.0 L304.6 440.9 L304.7 437.9 L304.9 434.9 L305.1 432.0 L305.3 429.0 L305.6 426.1 L305.9 423.1 L306.3 420.2 L306.7 417.3 L307.1 414.4 L307.6 411.6 L308.0 408.7 L308.5 405.8 L309.1 402.9 L309.6 400.0 L310.2 397.2 L310.8 394.3 L311.4 391.4 L312.0 388.5 L312.6 385.6 L313.2 382.7 L313.9 379.7 L314.5 376.8 L315.1 373.8 L315.7 370.9 L316.4 367.9 L316.9 364.9 L317.5 361.8 L318.1 358.8 L318.6 355.7 L319.1 352.6 L319.6 349.4 L320.0 346.3 L320.4 343.1 L320.8 339.9 L321.0 336.6 L321.3 333.3 L321.4 330.0 L321.5 326.7 L321.6 323.3 L321.5 320.0 L321.4 316.6 L321.2 313.1 L320.9 309.7 L320.5 306.2 L320.0 302.8 L319.4 299.3 L318.7 295.8 L317.8 291.9 L316.9 288.8 L316.0 285.8 L315.0 283.0 L313.9 280.2 L312.8 277.5 L311.7 274.8 L310.5 272.3 L309.2 269.9 L307.9 267.5 L306.6 265.2 L305.3 263.0 L303.9 260.9 L302.5 258.9 L301.1 256.9 L299.7 255.1 L298.3 253.3 L296.9 251.5 L295.5 249.9 L294.1 248.3 L292.7 246.7 L291.3 245.2 L290.0 243.8 L288.6 242.4 L287.3 241.1 L286.0 239.8 L284.7 238.5 L283.5 237.3 L282.3 236.2 L281.1 235.0 L279.9 233.9 L278.8 232.8 L277.7 231.7 L276.7 230.6 L275.7 229.6 L274.7 228.5 L273.7 227.5 L272.8 226.5 L271.9 225.4 L271.0 224.4 L270.2 223.3 L269.4 222.3 L268.7 221.2 L268.0 220.1 L267.3 218.9 L266.6 217.7 L266.0 216.5 L265.4 215.2 L264.9 213.8 L264.4 212.4 L263.9 210.9 L263.5 209.4 L263.2 207.8 L262.9 206.1 L262.7 204.3 L262.5 202.4 L262.4 200.4 L262.4 198.4 L262.4 196.2 L262.6 194.0 L262.8 191.6 L249.2 188.4 L248.3 191.0 L247.5 193.5 L246.8 196.0 L246.1 198.4 L245.6 200.9 L245.1 203.3 L244.7 205.6 L244.4 208.0 L244.1 210.3 L244.0 212.5 L243.9 214.8 L243.9 217.0 L243.9 219.2 L244.0 221.4 L244.3 223.5 L244.5 225.7 L244.9 227.8 L245.3 229.8 L245.7 231.9 L246.2 233.9 L246.8 235.8 L247.4 237.8 L248.0 239.7 L248.7 241.5 L249.3 243.4 L250.1 245.2 L250.8 246.9 L251.5 248.7 L252.3 250.4 L253.1 252.1 L253.8 253.8 L254.6 255.5 L255.3 257.1 L256.1 258.7 L256.8 260.3 L257.5 261.9 L258.2 263.5 L258.9 265.0 L259.5 266.6 L260.2 268.1 L260.8 269.6 L261.4 271.1 L261.9 272.7 L262.4 274.2 L262.9 275.7 L263.3 277.2 L263.8 278.7 L264.2 280.2 L264.5 281.8 L264.8 283.3 L265.1 284.8 L265.4 286.4 L265.6 288.0 L265.8 289.6 L265.9 291.3 L266.1 293.0 L266.1 294.7 L266.2 296.4 L266.2 298.3 L266.2 300.1 L266.0 301.8 L265.9 303.8 L265.7 305.8 L265.4 307.8 L265.1 309.7 L264.7 311.6 L264.3 313.5 L263.8 315.4 L263.3 317.3 L262.7 319.2 L262.1 321.1 L261.4 323.0 L260.7 325.0 L259.9 326.9 L259.1 328.9 L258.2 330.9 L257.3 333.0 L256.4 335.1 L255.4 337.2 L254.4 339.3 L253.3 341.5 L252.2 343.7 L251.0 346.0 L249.8 348.4 L248.6 350.8 L247.3 353.2 L246.1 355.7 L244.7 358.2 L243.4 360.8 L242.0 363.5 L240.6 366.2 L239.2 369.0 L237.8 371.9 L236.3 374.8 L234.9 377.8 L233.4 380.9 L231.9 384.0 L230.5 387.3 L229.0 390.5 L227.5 393.9 L226.1 397.4 L224.6 400.9 L223.2 404.5 L221.8 408.2 L220.4 412.0 L219.1 415.9 L217.7 419.9 L216.5 424.0 L215.2 428.1 L214.0 432.3 L212.8 436.7 L211.7 441.1 L210.6 445.6 L209.6 450.2 L208.6 455.0 L207.6 459.8 L206.7 464.7 L205.9 469.7 L205.0 474.8 L204.0 480.0Z" fill="#fff"/>
+    <path d="M258.1 447.2 L258.6 443.4 L259.2 439.7 L259.8 436.0 L260.5 432.4 L261.2 428.9 L262.0 425.4 L262.8 422.0" stroke="#000" stroke-width="7.5" stroke-linecap="round" fill="none"/><path d="M274.0 384.5 L275.0 381.7 L276.0 378.8 L277.0 376.0 L278.0 373.2 L279.0 370.5 L280.0 367.7" stroke="#000" stroke-width="6.1" stroke-linecap="round" fill="none"/><path d="M289.1 338.6 L289.8 336.0 L290.3 333.4 L290.9 330.8 L291.3 328.2 L291.7 325.6" stroke="#000" stroke-width="5.1" stroke-linecap="round" fill="none"/><path d="M292.4 298.8 L292.0 296.0 L291.6 293.5 L291.1 291.1 L290.6 288.8" stroke="#000" stroke-width="4.2" stroke-linecap="round" fill="none"/><path d="M284.0 270.6 L283.1 268.8 L282.2 267.1 L281.3 265.4" stroke="#000" stroke-width="3.5" stroke-linecap="round" fill="none"/><path d="M272.4 251.5 L271.4 250.1 L270.4 248.6" stroke="#000" stroke-width="2.9" stroke-linecap="round" fill="none"/>
+  </g>
+  <circle cx="256" cy="178" r="26" fill="#fff"/>
+</svg>`;
+// تخزين بسيط في المتصفح (لو متاح)
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const timeAgo = (t) => {
+  const m = Math.floor((Date.now() - t) / 60000);
+  if (m < 1) return "دلوقتي"; if (m < 60) return `من ${ar(m)} دقيقة`;
+  const d = new Date(t), today = new Date().toDateString() === d.toDateString();
+  return (today ? "النهاردة " : d.toLocaleDateString("ar-EG", { weekday: "short", day: "numeric", month: "short" }) + " ") + d.toLocaleTimeString("ar-EG", { hour: "numeric", minute: "2-digit" });
+};
+const PAY_METHODS = [
+  { id: "card", icon: "💳", name: "كارت فيزا", sub: "•••• 4242" },
+  { id: "wallet", icon: "👛", name: "محفظة في طريقك", sub: "الرصيد ١٥٠٫٠٠ ج.م" },
+  { id: "cash", icon: "💵", name: "كاش", sub: "ادفع للكابتن في الآخر" },
+];
+
+const RIDE_TYPES = [
+  { id: "eco", name: "اقتصادي", icon: "🚗", mult: 1, eta: 0 },
+  { id: "comfort", name: "مريح", icon: "🚙", mult: 1.35, eta: 1 },
+  { id: "xl", name: "عائلي", icon: "🚐", mult: 1.7, eta: 2 },
+];
+function fareCents(a, b, mult = 1) { return Math.round((1500 + dist(a, b) / 1000 * 700) * mult); }
+
+// =====================================================================
+//  رسم الخريطة (Canvas) + شبكة H3
+// =====================================================================
+// شوارع ثابتة متولدة مرة واحدة (شكل خريطة فقط)
+const ROADS = (() => {
+  const roads = [];
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = -12; i <= 12; i++) {
+    const main = i % 4 === 0;
+    const a = offset(CENTER, -6000, i * 420 + rnd() * 80), b = offset(CENTER, 6000, i * 420 + (rnd() - .5) * 600);
+    roads.push({ pts: [a, b], w: main ? 14 : 7 });
+    const c = offset(CENTER, i * 430 + rnd() * 90, -7000), d = offset(CENTER, i * 430 + (rnd() - .5) * 500, 7000);
+    roads.push({ pts: [c, d], w: main ? 14 : 7 });
+  }
+  roads.push({ pts: [offset(CENTER, -5000, -5000), offset(CENTER, 5000, 5000)], w: 18 });
+  roads.push({ pts: [offset(CENTER, -5000, 4200), offset(CENTER, 4800, -4600)], w: 16 });
+  return roads;
+})();
+const NILE = (() => {
+  const pts = [];
+  for (let y = -8000; y <= 8000; y += 250) pts.push(offset(CENTER, -650 + Math.sin(y / 1700) * 380 + y * 0.06, y));
+  return pts;
+})();
+
+class MapView {
+  constructor(canvas, center, mpp) {
+    this.cv = canvas; this.ctx = canvas.getContext("2d");
+    this.center = { ...center }; this.mpp = mpp; this.cellCache = { key: "", cells: [] };
+    new ResizeObserver(() => this.resize()).observe(canvas); this.resize();
+  }
+  resize() {
+    const r = this.cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    this.w = r.width; this.h = r.height;
+    this.cv.width = r.width * dpr; this.cv.height = r.height * dpr;
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  // المركز البصري أعلى شوية عشان الـ bottom sheet
+  get cy() { return this.h * 0.36; }
+  proj(p) { return [this.w / 2 + (p.lng - this.center.lng) * M_PER_DEG_LNG / this.mpp, this.cy - (p.lat - this.center.lat) * M_PER_DEG_LAT / this.mpp]; }
+  unproj(x, y) { return { lat: this.center.lat - (y - this.cy) * this.mpp / M_PER_DEG_LAT, lng: this.center.lng + (x - this.w / 2) * this.mpp / M_PER_DEG_LNG }; }
+  visibleCells() {
+    const key = this.center.lat.toFixed(3) + "," + this.center.lng.toFixed(3) + "," + this.w;
+    if (this.cellCache.key === key) return this.cellCache.cells;
+    const pad = 700 / this.mpp;
+    const poly = [this.unproj(-pad, -pad), this.unproj(this.w + pad, -pad), this.unproj(this.w + pad, this.h + pad), this.unproj(-pad, this.h + pad)].map(p => [p.lat, p.lng]);
+    const cells = h3.polygonToCells(poly, RES).map(c => ({ id: c, boundary: h3.cellToBoundary(c).map(([lat, lng]) => ({ lat, lng })) }));
+    this.cellCache = { key, cells };
+    return cells;
+  }
+  path(pts) { const c = this.ctx; c.beginPath(); pts.forEach((p, i) => { const [x, y] = this.proj(p); i ? c.lineTo(x, y) : c.moveTo(x, y); }); }
+  drawBase(highlight /* Map cell -> color */) {
+    const c = this.ctx;
+    c.fillStyle = "#151a21"; c.fillRect(0, 0, this.w, this.h);
+    // النيل
+    c.lineCap = "round"; c.lineJoin = "round";
+    this.path(NILE); c.strokeStyle = "#16304a"; c.lineWidth = 260 / this.mpp; c.stroke();
+    // الشوارع
+    for (const r of ROADS) { this.path(r.pts); c.strokeStyle = r.w > 10 ? "#2b3340" : "#222933"; c.lineWidth = r.w / this.mpp * 2.2; c.stroke(); }
+    // شبكة H3
+    for (const cell of this.visibleCells()) {
+      this.path(cell.boundary); c.closePath();
+      const hl = highlight && highlight.get(cell.id);
+      if (hl) { c.fillStyle = hl; c.fill(); }
+      c.strokeStyle = hl ? "rgba(168,85,247,.55)" : "rgba(148,163,184,.09)"; c.lineWidth = 1; c.stroke();
+    }
+  }
+  car(p, heading, color, label, glow) {
+    const c = this.ctx, [x, y] = this.proj(p);
+    if (x < -30 || y < -30 || x > this.w + 30 || y > this.h + 30) return;
+    c.save(); c.translate(x, y);
+    if (glow) { c.beginPath(); c.arc(0, 0, 18, 0, 7); c.fillStyle = glow; c.fill(); }
+    c.rotate(heading);
+    c.fillStyle = color; c.strokeStyle = "rgba(0,0,0,.6)"; c.lineWidth = 1.5;
+    roundRect(c, -6, -10, 12, 20, 3); c.fill(); c.stroke();
+    c.fillStyle = "rgba(15,23,42,.75)"; roundRect(c, -4.5, -6, 9, 5, 1.5); c.fill();
+    c.restore();
+    if (label) { c.font = "700 11px Cairo"; c.fillStyle = "#e2e8f0"; c.textAlign = "center"; c.fillText(label, x, y - 16); }
+  }
+  pin(p, color, square) {
+    const c = this.ctx, [x, y] = this.proj(p);
+    c.beginPath(); c.arc(x, y, 14, 0, 7); c.fillStyle = color + "33"; c.fill();
+    c.fillStyle = color; c.strokeStyle = "#fff"; c.lineWidth = 3;
+    if (square) { c.fillRect(x - 7, y - 7, 14, 14); c.strokeRect(x - 7, y - 7, 14, 14); }
+    else { c.beginPath(); c.arc(x, y, 7, 0, 7); c.fill(); c.stroke(); }
+  }
+  line(a, b, color, dashed) {
+    const c = this.ctx; this.path([a, b]); c.strokeStyle = color; c.lineWidth = 4; c.setLineDash(dashed ? [8, 8] : []); c.stroke(); c.setLineDash([]);
+  }
+  circle(p, meters, color) {
+    const c = this.ctx, [x, y] = this.proj(p); c.beginPath(); c.arc(x, y, meters / this.mpp, 0, 7); c.strokeStyle = color; c.lineWidth = 1.5; c.setLineDash([4, 6]); c.stroke(); c.setLineDash([]);
+  }
+}
+function roundRect(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+
+// =====================================================================
+//  لوحة السجل
+// =====================================================================
+const logEl = document.getElementById("log");
+const showWs = document.getElementById("showWs");
+function log(tag, text, cls, svc) {
+  if (tag === "WS" && /location/.test(text) && !showWs.checked) return;
+  const d = document.createElement("div");
+  const t = new Date().toLocaleTimeString("en-GB", { hour12: false }) + "." + String(Date.now() % 1000).padStart(3, "0");
+  d.innerHTML = `<time>${t}</time><span class="tag t-${tag}">${tag}</span><span class="${cls || ""}"></span>`;
+  d.lastChild.textContent = text;
+  logEl.appendChild(d);
+  while (logEl.children.length > 400) logEl.firstChild.remove();
+  logEl.scrollTop = logEl.scrollHeight;
+  if (svc) flash(svc);
+}
+function flash(svc) {
+  const el = document.querySelector(`.svc[data-svc="${svc}"]`); if (!el) return;
+  el.classList.add("flash"); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove("flash"), 700);
+}
+
+// =====================================================================
+//  "السيرفر" التجريبي — نفس منطق الباك إند بس جوه المتصفح
+//  (لما نربط بالسيرفر الحقيقي، الجزء ده بيتشال ويتبدل بـ WebSocket)
+// =====================================================================
+const FSM = {
+  requested: { accept: "accepted", cancel: "cancelled" },
+  accepted: { arrive: "driver_arrived", cancel: "cancelled" },
+  driver_arrived: { start: "started", cancel: "cancelled" },
+  started: { complete: "completed" },
+  completed: {}, cancelled: {},
+};
+const NAMES = ["أحمد", "كريم", "عمرو", "حسن", "مصطفى", "يوسف", "طارق", "شريف", "إسلام", "وليد", "هاني", "سامح", "رامي", "إبراهيم", "خالد", "محمد"];
+const CARS = ["هيونداي إلنترا", "تويوتا كورولا", "نيسان صني", "كيا سيراتو", "شيفروليه أوبترا", "إم جي 5"];
+const LETTERS = ["ق ط ر", "س م ع", "ب ن د", "ل ك هـ", "ع و ص", "ر ج م"];
+
+class MockServer {
+  constructor() {
+    this.drivers = new Map();     // driverId -> {id, pos, cell, status, ...}
+    this.cells = new Map();       // H3 cell -> Set(driverId)   ← الفهرس
+    this.trips = new Map();
+    this.offers = new Map();      // tripId -> Set(driverId)
+    this.clients = { rider: null, drivers: new Map() };
+    this.updatesThisSec = 0; this.ups = 0;
+    this.lastSearch = null;
+    this.ledger = []; this.ratings = new Map(); this.processedPayments = new Set();
+    setInterval(() => { this.ups = this.updatesThisSec; this.updatesThisSec = 0; }, 1000);
+  }
+
+  // ---------- Location Service ----------
+  updateLocation(driverId, pos, meta) {
+    this.updatesThisSec++;
+    let d = this.drivers.get(driverId);
+    const cell = h3.latLngToCell(pos.lat, pos.lng, RES);
+    if (!d) {
+      d = { id: driverId, status: "available", ...meta };
+      this.drivers.set(driverId, d);
+      log("WS", `driver ${driverId} connected`, "", "gateway");
+    }
+    if (d.cell && d.cell !== cell) this.cells.get(d.cell)?.delete(driverId);
+    if (!this.cells.has(cell)) this.cells.set(cell, new Set());
+    this.cells.get(cell).add(driverId);
+    d.cell = cell; d.pos = pos; d.updatedAt = Date.now();
+    log("WS", `← location ${driverId} ${pos.lat.toFixed(5)},${pos.lng.toFixed(5)} cell=${cell}`, "", "location");
+  }
+  disconnect(driverId) {
+    const d = this.drivers.get(driverId); if (!d) return;
+    this.cells.get(d.cell)?.delete(driverId); this.drivers.delete(driverId);
+    log("WS", `driver ${driverId} disconnected → removed from memory`, "", "gateway");
+  }
+  tryReserve(id) { const d = this.drivers.get(id); if (!d || d.status !== "available") return false; d.status = "busy"; return true; }
+  release(id) { const d = this.drivers.get(id); if (d) d.status = "available"; }
+
+  /** أقرب سواقين: بنلف في حلقات H3 حوالين خلية الزبون k=0,1,2... */
+  findNearest(origin, limit = 3, maxRings = 8) {
+    const t0 = performance.now();
+    const originCell = h3.latLngToCell(origin.lat, origin.lng, RES);
+    const visited = new Set(), rings = [], found = [];
+    let extra = false;
+    for (let k = 0; k <= maxRings; k++) {
+      const ring = [];
+      for (const c of h3.gridDisk(originCell, k)) {
+        if (visited.has(c)) continue; visited.add(c); ring.push(c);
+        for (const id of this.cells.get(c) || []) {
+          const d = this.drivers.get(id);
+          if (d.status === "available") found.push({ id, d: dist(origin, d.pos) });
+        }
+      }
+      rings.push(ring);
+      if (found.length >= limit) { if (extra) break; extra = true; }
+    }
+    found.sort((a, b) => a.d - b.d);
+    const ms = performance.now() - t0;
+    this.lastSearch = { origin, rings, at: Date.now(), ms, scanned: visited.size };
+    log("H3", `search from ${originCell}: ${rings.length} rings, ${visited.size} cells scanned, ${found.length} candidates in ${ms.toFixed(2)}ms (out of ${this.drivers.size} drivers)`, "", "location");
+    return found.slice(0, limit);
+  }
+
+  // ---------- Trip Service (state machine + CAS) ----------
+  cas(tripId, expected, patch, actor) {
+    const t = this.trips.get(tripId);
+    if (!t || t.status !== expected.status || t.version !== expected.version) {
+      log("CAS", `✗ ${actor}: UPDATE trips SET … WHERE id=${tripId} AND status='${expected.status}' AND version=${expected.version} → 0 rows (now: ${t?.status} v${t?.version})`, "bad", "trip");
+      return null;
+    }
+    Object.assign(t, patch); t.version++;
+    log("CAS", `✓ ${actor}: version ${expected.version} → ${t.version}, status=${t.status}`, "good", "trip");
+    return { ...t };
+  }
+  transition(tripId, event, actor, patch = {}) {
+    const t = this.trips.get(tripId);
+    const to = FSM[t.status][event];
+    if (!to) { log("FSM", `✗ "${event}" not allowed from "${t.status}"`, "bad", "trip"); return null; }
+    const snap = { status: t.status, version: t.version };
+    const r = this.cas(tripId, snap, { status: to, ...patch }, actor);
+    if (r) {
+      log("FSM", `${snap.status} ──${event}──▶ ${to}`, "", "trip");
+      this.publish("trip.status_changed", { tripId, from: snap.status, to });
+      this.pushTrip(r);
+    }
+    return r;
+  }
+  pushTrip(trip) {
+    const payload = { ...trip, driver: trip.driverId ? this.publicDriver(trip.driverId) : null };
+    log("WS", `→ rider ${trip.riderId}: trip_update ${trip.status}`, "", "gateway");
+    this.toRider(trip.riderId, { type: "trip_update", trip: payload });
+    if (trip.driverId) this.toDriver(trip.driverId, { type: "trip_update", trip: payload });
+  }
+  publicDriver(id) {
+    const d = this.drivers.get(id);
+    return d && { id, name: d.name, car: d.car, plate: d.plate, rating: this.avgRating(id), pos: d.pos };
+  }
+  avgRating(id) { const r = this.ratings.get(id); return r ? (r.sum / r.n) : (this.drivers.get(id)?.baseRating ?? 4.8); }
+  toRider(id, msg) { if (typeof rider !== "undefined" && id === rider.id) this.clients.rider?.(msg); }
+  toDriver(id, msg) {
+    const h = this.clients.drivers.get(id);
+    if (h) { if (msg.type !== "trip_update") log("WS", `→ driver ${id}: ${msg.type}`, "", "gateway"); h(msg); }
+  }
+
+  requestTrip(riderId, pickup, dropoff, type, labels = {}) {
+    const id = "t-" + Math.random().toString(36).slice(2, 7);
+    const trip = { id, riderId, driverId: null, pickup, dropoff, type: type.id, status: "requested", version: 1, fare: fareCents(pickup, dropoff, type.mult), ...labels };
+    this.trips.set(id, trip);
+    log("FSM", `trip ${id} created → requested (v1)`, "", "trip");
+    this.publish("trip.requested", { tripId: id });
+    // Dispatch Service: يدور ويبعت العرض لأقرب 3 مع بعض
+    setTimeout(() => {
+      flash("dispatch");
+      const near = this.findNearest(pickup, 3);
+      if (!near.length) { this.transition(id, "cancel", "system", { cancelledBy: "system" }); return; }
+      this.offers.set(id, new Set(near.map(n => n.id)));
+      log("SYS", `dispatch: offer ${id} → [${near.map(n => `${n.id} (${Math.round(n.d)}m)`).join(", ")}]`, "", "dispatch");
+      for (const n of near) this.toDriver(n.id, { type: "trip_offer", trip: { ...trip }, distance: n.d, expiresIn: 15 });
+    }, 700);
+    return { ...trip };
+  }
+
+  /** قبول — كل سواق بيقرا الرحلة (snapshot) وبعدين يعمل conditional update */
+  readForAccept(tripId, driverId) { const t = this.trips.get(tripId); return t && { status: t.status, version: t.version, offered: !!this.offers.get(tripId)?.has(driverId) }; }
+  commitAccept(tripId, driverId, snap) {
+    if (!snap?.offered) return { ok: false, reason: "not_offered" };
+    if (snap.status !== "requested") return { ok: false, reason: "already_taken" };
+    if (!this.tryReserve(driverId)) return { ok: false, reason: "driver_busy" };
+    const r = this.cas(tripId, snap, { status: "accepted", driverId }, driverId);
+    if (!r) { this.release(driverId); return { ok: false, reason: "already_taken" }; }
+    log("FSM", `requested ──accept──▶ accepted (driver ${driverId})`, "", "trip");
+    const losers = [...(this.offers.get(tripId) || [])].filter(x => x !== driverId);
+    this.offers.delete(tripId);
+    for (const l of losers) this.toDriver(l, { type: "offer_withdrawn", tripId, reason: "taken" });
+    this.publish("trip.accepted", { tripId, driverId });
+    this.pushTrip(r);
+    return { ok: true };
+  }
+  acceptTrip(tripId, driverId) {
+    log("WS", `← driver ${driverId}: accept ${tripId}`, "", "gateway");
+    return this.commitAccept(tripId, driverId, this.readForAccept(tripId, driverId));
+  }
+  /** اتنين بيقبلوا في نفس اللحظة: الاتنين قروا نفس النسخة قبل ما حد فيهم يكتب */
+  acceptConcurrently(tripId, ids) {
+    log("SYS", `⚡ ${ids.join(" & ")} pressed accept at the same millisecond`, "", "gateway");
+    const snaps = ids.map(id => [id, this.readForAccept(tripId, id)]);
+    snaps.forEach(([id, s]) => log("SYS", `${id} read trip: status=${s.status} version=${s.version}`, "", "trip"));
+    if (Math.random() < .5) snaps.reverse(); // أي واحد يوصل للـ DB الأول
+    const res = {};
+    for (const [id, s] of snaps) res[id] = this.commitAccept(tripId, id, s);
+    return res;
+  }
+  declineOffer(tripId, driverId) {
+    this.offers.get(tripId)?.delete(driverId);
+    log("WS", `← driver ${driverId}: decline ${tripId}`, "", "gateway");
+  }
+  cancel(tripId, by, actor) {
+    const t = this.transition(tripId, "cancel", actor, { cancelledBy: by });
+    if (!t) return null;
+    for (const id of this.offers.get(tripId) || []) this.toDriver(id, { type: "offer_withdrawn", tripId, reason: "cancelled" });
+    this.offers.delete(tripId);
+    if (t.driverId) this.release(t.driverId);
+    this.publish("trip.cancelled", { tripId, by });
+    return t;
+  }
+  complete(tripId, driverId) {
+    const t = this.transition(tripId, "complete", driverId);
+    if (!t) return null;
+    this.release(driverId);
+    // الرد للكابتن والزبون حصل خلاص ↑ — والباقي كله async في الطابور ↓
+    this.publish("trip.completed", { tripId, riderId: t.riderId, driverId, fare: t.fare });
+    return t;
+  }
+  rate(tripId, stars) {
+    const t = this.trips.get(tripId);
+    this.publish("trip.rated", { tripId, driverId: t.driverId, stars });
+  }
+
+  // ---------- Message Queue + المستهلكين (workers) ----------
+  publish(topic, payload) {
+    log("QUEUE", `publish ${topic} ${JSON.stringify(payload)}`, "", "queue");
+    const subs = CONSUMERS[topic] || [];
+    for (const [group, delay, fn] of subs) setTimeout(() => { try { fn.call(this, payload); } catch (e) { log("QUEUE", `${group} failed: ${e.message}`, "bad"); } }, delay);
+  }
+}
+
+const CONSUMERS = {
+  "trip.completed": [
+    ["payment", 500, function (e) {
+      flash("payment");
+      if (this.processedPayments.has(e.tripId)) { log("PAY", `duplicate ${e.tripId} ignored (idempotent)`); return; }
+      this.processedPayments.add(e.tripId);
+      log("PAY", `charge rider card •••• 4242 ${fmtMoney(e.fare)} (idempotency-key=${e.tripId}) ✓`, "good");
+      this.publish("payment.captured", { ...e, paymentId: "pay_" + e.tripId.slice(2) });
+    }],
+    ["notification", 300, function (e) {
+      flash("notification");
+      log("NOTIF", `push → rider ${e.riderId}: "وصلت بالسلامة! قيّم رحلتك"`);
+      this.toRider(e.riderId, { type: "notification", title: "وصلت بالسلامة 🎉", body: "قيّم رحلتك مع الكابتن" });
+    }],
+    ["rating", 400, function (e) { flash("rating"); log("RATE", `rating request opened for trip ${e.tripId}`); }],
+  ],
+  "payment.captured": [
+    ["accounting", 400, function (e) {
+      flash("accounting");
+      const fee = Math.round(e.fare * 0.2), earn = e.fare - fee;
+      this.ledger.push({ trip: e.tripId, rider: -e.fare, driver: earn, platform: fee });
+      log("ACCT", `ledger: rider −${fmtMoney(e.fare)} | driver ${e.driverId} +${fmtMoney(earn)} | platform +${fmtMoney(fee)} (Σ=0)`);
+      this.toDriver(e.driverId, { type: "earning", tripId: e.tripId, amount: earn });
+    }],
+    ["notification", 250, function (e) {
+      flash("notification");
+      log("NOTIF", `push → rider: "تم خصم ${fmtMoney(e.fare)}" | driver: "اتضاف لرصيدك"`);
+      this.toRider(e.riderId, { type: "notification", title: "تم الدفع 💳", body: `اتخصم ${fmtMoney(e.fare)} من الكارت` });
+    }],
+  ],
+  "trip.rated": [
+    ["rating", 400, function (e) {
+      flash("rating");
+      const r = this.ratings.get(e.driverId) || { sum: (this.drivers.get(e.driverId)?.baseRating ?? 4.8) * 20, n: 20 };
+      r.sum += e.stars; r.n++; this.ratings.set(e.driverId, r);
+      log("RATE", `driver ${e.driverId} got ${e.stars}★ → new avg ${(r.sum / r.n).toFixed(2)}`);
+    }],
+  ],
+  "trip.accepted": [["notification", 200, function (e) { flash("notification"); log("NOTIF", `push → rider: "الكابتن في الطريق"`); }]],
+  "trip.cancelled": [["notification", 200, function (e) { flash("notification"); log("NOTIF", `push → all parties: trip ${e.tripId} cancelled by ${e.by}`); }]],
+};
+
+// =====================================================================
+//  الوضع المباشر: نفس الواجهة، بس متوصلة بالسيرفر الحقيقي على WebSocket
+//  (بيشتغل لما الصفحة تتفتح من السيرفر على /app)
+// =====================================================================
+// أي تطبيق بيتعرض: "rider" أو "driver" أو null (الاتنين جنب بعض)
+const APP = window.FT_APP || (/^\/rider\b/.test(location.pathname) ? "rider" : /^\/captain\b/.test(location.pathname) ? "driver" : null);
+if (APP) document.body.classList.add("single", "app-" + APP);
+// متوصل بالسيرفر الحقيقي لما الصفحة جاية من السيرفر بتاعنا (/app أو /rider أو /captain)
+const LIVE = location.protocol.startsWith("http") && /^\/(app|rider|captain)\b/.test(location.pathname);
+function hashStr(s) { let h = 2166136261; for (const c of s) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+
+class LiveServer {
+  constructor() {
+    this.drivers = new Map(); this.clients = { rider: null, drivers: new Map() };
+    this.ups = 0; this.lastSearch = null; this.offers = new Map(); this.meta = new Map();
+    this.myTrips = new Set(); this.expectSearch = false;
+    this.base = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+    this.pending = new Map(); this.seq = 0; this.driverWs = null; this.riderWs = null;
+    this.connectMonitor();
+  }
+  get showAll() { return document.getElementById("forceRace").checked; }
+  open(role, id, onMsg) {
+    const ws = new WebSocket(`${this.base}?role=${role}&id=${id}`);
+    ws.onmessage = (ev) => {
+      const m = JSON.parse(ev.data);
+      if (m.reqId !== undefined && this.pending.has(m.reqId)) { this.pending.get(m.reqId)(m); this.pending.delete(m.reqId); return; }
+      onMsg(m);
+    };
+    ws.ready = new Promise((r) => ws.addEventListener("open", r, { once: true }));
+    return ws;
+  }
+  async req(ws, msg) {
+    if (!ws) return { type: "error", code: "offline" };
+    await ws.ready;
+    const reqId = ++this.seq;
+    return new Promise((resolve) => { this.pending.set(reqId, resolve); ws.send(JSON.stringify({ ...msg, reqId })); });
+  }
+  metaFor(id) {
+    if (id === me.id) return me.meta;
+    if (!this.meta.has(id)) {
+      const h = hashStr(id);
+      this.meta.set(id, { name: NAMES[h % NAMES.length], car: CARS[(h >>> 4) % CARS.length], plate: `${LETTERS[(h >>> 8) % LETTERS.length]} ${ar(100 + (h % 9000))}`, baseRating: 4.6 + ((h >>> 12) % 39) / 100 });
+    }
+    return this.meta.get(id);
+  }
+  publicDriver(id, profile) {
+    const m = this.metaFor(id), d = this.drivers.get(id);
+    return { id, name: profile?.name || m.name, car: profile?.car || m.car, plate: profile?.plate || m.plate, rating: m.baseRating, pos: d?.pos };
+  }
+  conv(t, m = {}) {
+    return { ...t, fare: t.fareCents, type: t.rideType || "eco", driver: t.driverId ? this.publicDriver(t.driverId, m.driverProfile) : null,
+      riderName: m.riderName, pickupName: m.pickupName, dropoffName: m.dropoffName };
+  }
+  loginRider(id, profile) {
+    if (this.riderWs) this.riderWs.close();
+    const ws = this.riderWs = this.open("rider", id, (m) => this.onRiderMsg(m));
+    ws.ready.then(() => ws.send(JSON.stringify({ type: "profile", name: profile.name })));
+  }
+
+  // ---------- لوحة المراقبة: أماكن كل السواقين + الأحداث ----------
+  connectMonitor() {
+    const ws = new WebSocket(`${this.base}?role=monitor&id=app`);
+    ws.onopen = () => log("SYS", `connected to live server ${location.host} — كل اللي هنا جاي من السيرفر الحقيقي`, "good", "gateway");
+    ws.onclose = () => { log("SYS", "lost connection to server, retrying…", "bad"); setTimeout(() => this.connectMonitor(), 1500); };
+    ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.type === "snapshot") this.onSnapshot(m); else if (m.type === "event") this.onEvent(m.topic, m.payload); };
+  }
+  onSnapshot(m) {
+    const seen = new Set(), now = performance.now();
+    for (const [id, lat, lng, busy] of m.drivers) {
+      seen.add(id);
+      let d = this.drivers.get(id);
+      const to = { lat, lng };
+      if (!d) { d = { id, ...this.metaFor(id), pos: to, from: to, to, heading: 0, t0: now }; this.drivers.set(id, d); }
+      else { d.from = { ...d.pos }; d.to = to; d.t0 = now; if (dist(d.from, to) > 0.5) d.heading = bearing(d.from, to); }
+      d.status = busy ? "busy" : "available";
+    }
+    for (const id of this.drivers.keys()) if (!seen.has(id)) this.drivers.delete(id);
+    this.ups = m.stats.locationUpdatesPerSec;
+    if (m.search && (this.showAll || this.expectSearch)) {
+      this.expectSearch = false;
+      this.lastSearch = { ...m.search, at: Date.now() };
+      log("H3", `search: ${m.search.rings.length} rings, ${m.search.scanned} cells scanned, ${m.search.found} candidates in ${m.search.ms.toFixed(3)}ms (out of ${m.drivers.length} drivers)`, "", "location");
+    }
+  }
+  tick() {
+    const now = performance.now();
+    for (const d of this.drivers.values()) {
+      if (d.id === me.id) { d.pos = { ...me.pos }; d.heading = me.heading; continue; }
+      const t = Math.min(1, (now - d.t0) / 1000);
+      d.pos = { lat: d.from.lat + (d.to.lat - d.from.lat) * t, lng: d.from.lng + (d.to.lng - d.from.lng) * t };
+    }
+  }
+  onEvent(topic, e) {
+    const tripId = e.tripId || e.trip?.id;
+    if (!this.showAll && !this.myTrips.has(tripId)) return;
+    switch (topic) {
+      case "trip.status_changed": log("FSM", `${tripId}: ${e.from} ──▶ ${e.to}  (version ${e.version})`, "", "trip"); break;
+      case "dispatch.offer_created": log("SYS", `dispatch: offer ${tripId} → ${e.driverId} (${e.distanceMeters}m)`, "", "dispatch"); break;
+      case "dispatch.offer_withdrawn": log("SYS", `dispatch: offer ${tripId} withdrawn from [${e.driverIds.join(", ")}] — ${e.reason}`, "", "dispatch"); break;
+      case "dispatch.accept_attempt":
+        if (e.ok) log("CAS", `✓ ${e.driverId}: UPDATE trips SET status='accepted' … WHERE id=${tripId} AND status='requested' AND version=${e.version - 1} → 1 row`, "good", "trip");
+        else log("CAS", `✗ ${e.driverId}: ${e.reason}${e.reason === "already_taken" ? " → 0 rows (حد سبقه)" : ""}`, "bad", "trip");
+        break;
+      case "payment.captured": {
+        const fee = Math.round(e.amountCents * 0.2);
+        log("PAY", `charged ${fmtMoney(e.amountCents)} (idempotency-key=${tripId}) ✓ ${e.paymentId}`, "good", "payment");
+        log("ACCT", `ledger: rider −${fmtMoney(e.amountCents)} | driver ${e.driverId} +${fmtMoney(e.amountCents - fee)} | platform +${fmtMoney(fee)} (Σ=0)`, "", "accounting");
+        break;
+      }
+      case "payment.failed": log("PAY", `payment failed: ${e.reason}`, "bad", "payment"); break;
+      case "trip.rated": log("RATE", `${e.driverId} got ${e.stars}★`, "", "rating"); break;
+      case "trip.completed": log("QUEUE", `publish trip.completed → payment, notification, rating`, "", "queue"); flash("notification"); break;
+      case "trip.cancelled": log("QUEUE", `publish trip.cancelled (by ${e.by}${e.reason ? ", " + e.reason : ""})`, "", "queue"); break;
+      case "trip.requested": log("QUEUE", `publish trip.requested → dispatch`, "", "queue"); break;
+    }
+  }
+
+  // ---------- رسايل الزبون ----------
+  onRiderMsg(m) {
+    if (m.type === "trip_update") this.clients.rider?.({ type: "trip_update", trip: this.conv(m.trip, m) });
+    else if (m.type === "notification") this.clients.rider?.(m);
+  }
+  async requestTrip(riderId, pickup, dropoff, type, labels = {}) {
+    this.expectSearch = true;
+    log("WS", `← rider ${riderId}: request_trip ${type.id}`, "", "gateway");
+    const r = await this.req(this.riderWs, { type: "request_trip", pickup, dropoff, rideType: type.id, ...labels });
+    if (r.type !== "ack") { log("SYS", `request failed: ${r.code} ${r.message || ""}`, "bad"); return null; }
+    this.myTrips.add(r.trip.id);
+    return this.conv(r.trip, { riderName: rider.profile?.name, ...labels });
+  }
+  rate(tripId, stars) { return this.req(this.riderWs, { type: "rate", tripId, stars }); }
+
+  // ---------- رسايل الكابتن (إنت) ----------
+  onDriverMsg(m) {
+    const h = this.clients.drivers.get(me.id); if (!h) return;
+    if (m.type === "trip_offer") {
+      const o = m.offer; this.myTrips.add(o.tripId);
+      log("WS", `→ driver ${me.id}: trip_offer ${o.tripId}`, "", "gateway");
+      h({ type: "trip_offer", trip: { id: o.tripId, pickup: o.pickup, dropoff: o.dropoff, fare: o.fareCents, type: o.rideType || "eco", riderName: o.riderName, pickupName: o.pickupName, dropoffName: o.dropoffName }, distance: o.distanceMeters, expiresIn: Math.max(1, Math.round((o.expiresAt - Date.now()) / 1000)) });
+    } else if (m.type === "offer_withdrawn") h(m);
+    else if (m.type === "trip_update") h({ type: "trip_update", trip: this.conv(m.trip, m) });
+    else if (m.type === "earning") h({ type: "earning", tripId: m.tripId, amount: m.amountCents });
+  }
+  updateLocation(id, pos) {
+    if (id !== me.id) return;
+    if (!this.driverWs || this.driverWs.readyState > 1) {
+      const dws = this.driverWs = this.open("driver", me.id, (m) => this.onDriverMsg(m));
+      dws.ready.then(() => dws.send(JSON.stringify({ type: "profile", name: me.meta.name, car: me.meta.car, plate: me.meta.plate })));
+    }
+    const ws = this.driverWs;
+    ws.ready.then(() => ws.readyState === 1 && ws.send(JSON.stringify({ type: "location", lat: pos.lat, lng: pos.lng })));
+  }
+  disconnect(id) { if (id === me.id && this.driverWs) { this.driverWs.close(); this.driverWs = null; } }
+  async acceptTrip(tripId) {
+    log("WS", `← driver ${me.id}: accept ${tripId}`, "", "gateway");
+    const r = await this.req(this.driverWs, { type: "accept", tripId });
+    return r.result || { ok: false, reason: r.code };
+  }
+  declineOffer(tripId) { this.driverWs?.readyState === 1 && this.driverWs.send(JSON.stringify({ type: "decline", tripId })); }
+  async transition(tripId, event) {
+    const r = await this.req(this.driverWs, { type: event, tripId });
+    if (r.type !== "ack") { log("FSM", `✗ "${event}" rejected: ${r.code}`, "bad", "trip"); return null; }
+    return this.conv(r.trip, { riderName: me.trip?.riderName, pickupName: me.trip?.pickupName, dropoffName: me.trip?.dropoffName });
+  }
+  complete(tripId) { return this.transition(tripId, "complete"); }
+  async cancel(tripId, by) {
+    const r = await this.req(by === "rider" ? this.riderWs : this.driverWs, { type: "cancel", tripId });
+    if (r.type !== "ack") { log("FSM", `✗ cancel rejected: ${r.code}`, "bad", "trip"); return null; }
+    return this.conv(r.trip);
+  }
+  avgRating(id) { return this.metaFor(id).baseRating; }
+}
+
+const server = LIVE ? new LiveServer() : new MockServer();
+
+// =====================================================================
+//  سواقين وهميين بيتحركوا ويبعتوا لوكيشن (زي أبلكيشن الكابتن بالظبط)
+// =====================================================================
+class SimDriver {
+  constructor(i) {
+    this.id = "d-" + String(i).padStart(2, "0");
+    const ang = rand(0, 6.28), r = rand(900, 3200);
+    this.pos = offset(CENTER, Math.cos(ang) * r, Math.sin(ang) * r);
+    this.heading = 0; this.newTarget();
+    this.meta = { name: pick(NAMES), car: pick(CARS), plate: `${pick(LETTERS)} ${ar(Math.floor(rand(100, 9999)))}`, baseRating: +rand(4.6, 4.98).toFixed(2) };
+    this.trip = null; this.phase = "cruise";
+    server.clients.drivers.set(this.id, (m) => this.onMsg(m));
+    setInterval(() => server.updateLocation(this.id, this.pos, this.meta), 1000 + Math.random() * 200);
+  }
+  newTarget() { const ang = rand(0, 6.28), r = rand(900, 3400); this.target = offset(CENTER, Math.cos(ang) * r, Math.sin(ang) * r); }
+  onMsg(m) {
+    if (m.type === "trip_offer") {
+      this.pendingOffer = m.trip.id;
+      clearTimeout(this.offerT);
+      this.offerT = setTimeout(() => {
+        if (this.pendingOffer !== m.trip.id) return;
+        this.pendingOffer = null;
+        const r = server.acceptTrip(m.trip.id, this.id);
+        if (!r.ok && r.reason !== "not_offered") log("SYS", `${this.id}: accept rejected (${r.reason})`, "bad");
+      }, rand(5500, 11000));
+    } else if (m.type === "offer_withdrawn") {
+      if (this.pendingOffer === m.tripId) { this.pendingOffer = null; clearTimeout(this.offerT); }
+    } else if (m.type === "trip_update") {
+      const t = m.trip;
+      if (t.status === "accepted") { this.trip = t; this.phase = "toPickup"; this.target = t.pickup; }
+      if (t.status === "cancelled" || t.status === "completed") { this.trip = null; this.phase = "cruise"; this.newTarget(); }
+    }
+  }
+  step(dt) {
+    const speed = (this.phase === "cruise" ? 7 : 11) * SIM_SPEED;
+    const prev = this.pos;
+    this.pos = moveToward(this.pos, this.target, speed * dt);
+    if (dist(prev, this.pos) > 0.5) this.heading = bearing(prev, this.pos);
+    if (dist(this.pos, this.target) < 1) {
+      if (this.phase === "cruise") this.newTarget();
+      else if (this.phase === "toPickup") { this.phase = "wait"; server.transition(this.trip.id, "arrive", this.id); setTimeout(() => { if (this.trip && server.transition(this.trip.id, "start", this.id)) { this.phase = "toDrop"; this.target = this.trip.dropoff; } }, 3500); }
+      else if (this.phase === "toDrop") { this.phase = "wait"; server.complete(this.trip.id, this.id); }
+    }
+  }
+}
+const sims = LIVE ? [] : Array.from({ length: 34 }, (_, i) => new SimDriver(i + 1));
+
+// =====================================================================
+//  تطبيق الزبون
+// =====================================================================
+const riderProfile = store.get("ft-rider");
+const rider = {
+  profile: riderProfile, id: riderProfile ? "r-" + riderProfile.phone : "r-guest",
+  state: "home", pickup: offset(CENTER, 0, 0), pickName: "ميدان التحرير", dropoff: null, dropName: "", pickMode: "dropoff",
+  type: RIDE_TYPES[0], pay: store.get("ft-pay") || "card",
+  trip: null, driver: null, stars: 0, history: store.get("ft-rider-history") || [], view: null,
+  map: new MapView(document.getElementById("riderMap"), CENTER, 9),
+};
+server.clients.rider = (m) => riderOnMsg(m);
+if (LIVE && rider.profile) server.loginRider(rider.id, rider.profile);
+
+function riderOnMsg(m) {
+  if (m.type === "trip_update") {
+    const prevLabels = rider.trip || {};
+    rider.trip = { ...m.trip, pickupName: m.trip.pickupName || prevLabels.pickupName, dropoffName: m.trip.dropoffName || prevLabels.dropoffName };
+    rider.driver = m.trip.driver;
+    const map = { accepted: "accepted", driver_arrived: "arrived", started: "onTrip", completed: "rate", cancelled: "cancelled" };
+    if (map[m.trip.status]) rider.state = map[m.trip.status];
+    if (m.trip.status === "accepted") riderToast("لقينا كابتن! 🚗", `${m.trip.driver.name} في الطريق ليك`);
+    if (m.trip.status === "driver_arrived") riderToast("الكابتن وصل 📍", "مستنيك في نقطة الركوب");
+    if (m.trip.status === "completed" || m.trip.status === "cancelled") riderRecord(rider.trip);
+    renderRider();
+  } else if (m.type === "notification") riderToast(m.title, m.body);
+}
+function riderRecord(t) {
+  if (rider.history.some((h) => h.id === t.id)) return;
+  rider.history.unshift({ id: t.id, at: Date.now(), status: t.status, fare: t.fare, pickupName: rider.pickName, dropName: rider.dropName,
+    driverName: t.driver?.name, car: t.driver?.car, cancelledBy: t.cancelledBy, pay: rider.pay, type: t.type, stars: 0 });
+  rider.history = rider.history.slice(0, 50); store.set("ft-rider-history", rider.history);
+}
+function riderToast(title, body) {
+  const el = document.createElement("div"); el.className = "toast"; el.innerHTML = `<b></b><span class="muted"></span>`;
+  el.querySelector("b").textContent = title; el.querySelector("span").textContent = body;
+  document.getElementById("rider").appendChild(el); setTimeout(() => el.remove(), 3200);
+}
+function setRiderPoint(mode, p, name) {
+  if (mode === "pickup") { rider.pickup = p; rider.pickName = name; rider.pickMode = "dropoff"; }
+  else { rider.dropoff = p; rider.dropName = name; }
+  rider.state = rider.dropoff ? "choose" : "home";
+  renderRider();
+}
+document.getElementById("riderMap").addEventListener("click", (e) => {
+  if (!["home", "choose"].includes(rider.state)) return;
+  const r = e.target.getBoundingClientRect();
+  const p = rider.map.unproj(e.clientX - r.left, e.clientY - r.top);
+  setRiderPoint(rider.pickMode, p, placeName(p));
+});
+const payOf = (id) => PAY_METHODS.find((x) => x.id === id) || PAY_METHODS[0];
+
+function renderRider() {
+  renderRiderOverlay();
+  const s = rider.state, sheet = document.getElementById("riderSheet");
+  const top = document.getElementById("riderTop");
+  const first = rider.profile ? esc(rider.profile.name.split(" ")[0]) : "";
+  top.innerHTML = `<div class="pill btnish" id="rMenu">☰</div><div class="pill" style="flex:1;justify-content:center">${s === "home" ? (rider.pickMode === "pickup" ? "دوس على الخريطة تحدد مكان الركوب" : `أهلاً يا ${first} 👋`) : s === "choose" ? "اختار نوع العربية" : s === "searching" ? "بندورلك على كابتن…" : s === "rate" ? "الرحلة خلصت" : "رحلتك"}</div>`;
+  top.querySelector("#rMenu").onclick = () => { rider.view = "menu"; renderRiderOverlay(); };
+  const dLen = rider.dropoff ? dist(rider.pickup, rider.dropoff) : 0;
+  const stepsBar = (i) => `<div class="steps">${[0, 1, 2, 3].map(k => `<div class="${k < i ? "done" : k === i ? "cur" : ""}"></div>`).join("")}</div>`;
+  const driverCard = (d) => d ? `<div class="driver-card"><div class="avatar">${esc(d.name[0])}</div><div style="flex:1"><b>${esc(d.name)}</b> <span class="muted">★ ${d.rating.toFixed(2)}</span><div class="muted">${esc(d.car)}</div></div><span class="plate">${esc(d.plate)}</span></div>` : "";
+  const pointFields = (clickable) => `
+      <div class="field ${clickable ? "clickable" : ""} ${clickable && rider.pickMode === "pickup" ? "active" : ""}" data-mode="pickup"><span class="ic" style="background:var(--accent)"></span><span>${esc(rider.pickName)}</span>${clickable ? `<span class="muted" style="margin-inline-start:auto">تغيير</span>` : ""}</div>
+      <div class="field ${clickable ? "clickable" : ""} ${clickable && rider.pickMode === "dropoff" ? "active" : ""}" data-mode="dropoff"${rider.dropoff ? "" : ' style="color:var(--muted)"'}><span class="ic sq" style="background:#fff"></span><span>${rider.dropoff ? esc(rider.dropName) : "رايح فين؟ دوس على الخريطة أو اختار"}</span>${rider.dropoff ? `<span class="muted" style="margin-inline-start:auto">${(dLen / 1000).toFixed(1)} كم</span>` : ""}</div>`;
+  const bindFields = () => sheet.querySelectorAll("[data-mode]").forEach((f) => f.onclick = () => { rider.pickMode = f.dataset.mode; rider.state = "home"; renderRider(); });
+
+  if (s === "home") {
+    const chips = rider.pickMode === "pickup"
+      ? [{ name: "مكاني الحالي", p: offset(CENTER, 0, 0) }, ...PLACES.slice(1)]
+      : PLACES.filter((p) => dist(p.p, rider.pickup) > 300);
+    const recent = [...new Map(rider.history.filter((h) => h.status === "completed").map((h) => [h.dropName, h])).values()].slice(0, 2);
+    sheet.innerHTML = `<div class="grab"></div><h3>${rider.pickMode === "pickup" ? "هتركب منين؟" : "رايح فين؟"}</h3>
+      ${pointFields(true)}
+      <div class="chips">${chips.map((p, i) => `<button class="chip" data-place="${i}">📍 ${p.name}</button>`).join("")}</div>
+      ${recent.length && rider.pickMode === "dropoff" ? `<div class="muted" style="margin-bottom:4px">آخر أماكن رحتها</div>${recent.map((h, i) => `<div class="lrow" data-recent="${i}" style="cursor:pointer"><span>🕘</span><div class="grow"><div class="ttl">${esc(h.dropName)}</div><div class="muted">${timeAgo(h.at)}</div></div></div>`).join("")}` : `<div class="muted">💡 الخطوط البنفسجية الخفيفة على الخريطة هي خلايا H3 — السيرفر بيدور فيها على أقرب سواق.</div>`}`;
+    bindFields();
+    sheet.querySelectorAll("[data-place]").forEach(b => b.onclick = () => { const p = chips[+b.dataset.place]; setRiderPoint(rider.pickMode, p.p, p.name === "مكاني الحالي" ? "مكانك الحالي" : p.name); });
+    sheet.querySelectorAll("[data-recent]").forEach(b => b.onclick = () => { const h = recent[+b.dataset.recent]; const pl = PLACES.find((x) => x.name === h.dropName); if (pl) setRiderPoint("dropoff", pl.p, pl.name); });
+  } else if (s === "choose") {
+    const pm = payOf(rider.pay);
+    sheet.innerHTML = `<div class="grab"></div>
+      ${pointFields(true)}
+      <div class="types">${RIDE_TYPES.map(t => `<div class="type ${t.id === rider.type.id ? "sel" : ""}" data-type="${t.id}"><span class="car">${t.icon}</span><div class="grow"><b>${t.name}</b><div class="muted">${ar(2 + t.eta)} دقايق · ${t.id === "xl" ? "٦ أفراد" : "٤ أفراد"}</div></div><span class="price">${fmtMoney(fareCents(rider.pickup, rider.dropoff, t.mult))}</span></div>`).join("")}</div>
+      <div class="field clickable" id="rPay"><span>${pm.icon}</span><span>${pm.name} <span class="muted">${pm.sub}</span></span><span class="muted" style="margin-inline-start:auto">تغيير ›</span></div>
+      <div class="row" style="gap:8px"><button class="btn ghost small" id="rBack" style="width:auto;padding-inline:16px">رجوع</button><button class="btn" id="rReq">اطلب ${rider.type.name}</button></div>`;
+    bindFields();
+    sheet.querySelectorAll("[data-type]").forEach(el => el.onclick = () => { rider.type = RIDE_TYPES.find(t => t.id === el.dataset.type); renderRider(); });
+    sheet.querySelector("#rPay").onclick = () => { rider.view = "wallet"; renderRiderOverlay(); };
+    sheet.querySelector("#rBack").onclick = () => { rider.state = "home"; rider.dropoff = null; renderRider(); };
+    sheet.querySelector("#rReq").onclick = async () => {
+      if (!LIVE) log("WS", `← rider ${rider.id}: request_trip ${rider.type.id}`, "", "gateway");
+      rider.trip = { fare: fareCents(rider.pickup, rider.dropoff, rider.type.mult) }; rider.state = "searching"; renderRider();
+      const labels = { pickupName: rider.pickName, dropoffName: rider.dropName, riderName: rider.profile?.name };
+      const t = await server.requestTrip(rider.id, rider.pickup, rider.dropoff, rider.type, labels);
+      if (!t) { rider.state = "choose"; riderToast("مقدرناش نبعت الطلب", "اتأكد إن السيرفر شغال"); renderRider(); return; }
+      if (rider.state === "searching" && !rider.trip.id) { rider.trip = t; renderRider(); }
+    };
+  } else if (s === "searching") {
+    sheet.innerHTML = `<div class="grab"></div>
+      <div class="search-anim"><div class="radar"></div><div><h3 style="margin:0">بندورلك على أقرب كابتن</h3><div class="muted">بنبعت الطلب لأقرب ٣ كباتن في نفس الوقت — أول واحد يقبل ياخدها</div></div></div>
+      ${stepsBar(0)}
+      <div class="receipt"><div class="row between"><span class="muted">من</span><b>${esc(rider.pickName)}</b></div><div class="row between"><span class="muted">إلى</span><b>${esc(rider.dropName)}</b></div><div class="row between"><span class="muted">السعر المتوقع</span><b>${fmtMoney(rider.trip.fare)}</b></div></div>
+      <div style="height:10px"></div><button class="btn danger small" id="rCancel" ${rider.trip.id ? "" : "disabled"}>إلغاء الطلب</button>`;
+    sheet.querySelector("#rCancel").onclick = riderCancel;
+  } else if (s === "accepted" || s === "arrived") {
+    const d = rider.driver, live = d && server.drivers.get(d.id);
+    const eta = live ? Math.max(1, Math.round(dist(live.pos, rider.pickup) / (11 * SIM_SPEED) / 6)) : 0;
+    sheet.innerHTML = `<div class="grab"></div>
+      <h3>${s === "arrived" ? "الكابتن وصل ومستنيك 📍" : `الكابتن جاي في خلال ${ar(eta)} دقيقة`}</h3>
+      ${stepsBar(s === "arrived" ? 2 : 1)}
+      ${driverCard(d)}
+      ${s === "arrived" ? `<div class="banner ok">اركب العربية ${esc(d.car)} اللي نمرتها ${esc(d.plate)}</div>` : `<div class="muted" style="margin-bottom:8px">📍 نقطة الركوب: ${esc(rider.pickName)}</div>`}
+      <div class="row" style="gap:8px"><button class="btn ghost small">📞 اتصل</button><button class="btn ghost small">💬 رسالة</button></div>
+      <div style="height:8px"></div><button class="btn danger small" id="rCancel">إلغاء الرحلة</button>`;
+    sheet.querySelector("#rCancel").onclick = riderCancel;
+  } else if (s === "onTrip") {
+    const live = rider.driver && server.drivers.get(rider.driver.id);
+    const left = live ? dist(live.pos, rider.dropoff) : 0;
+    sheet.innerHTML = `<div class="grab"></div><h3>في الطريق لـ ${esc(rider.dropName)}</h3>
+      ${stepsBar(3)}
+      <div class="kv"><div><span class="muted">باقي</span><b>${(left / 1000).toFixed(1)} كم</b></div><div><span class="muted">السعر</span><b>${fmtMoney(rider.trip.fare)}</b></div></div>
+      ${driverCard(rider.driver)}
+      <div class="row" style="gap:8px"><button class="btn ghost small">🛡️ الأمان</button><button class="btn ghost small">↗️ شارك الرحلة</button></div>`;
+  } else if (s === "rate") {
+    const pm = payOf(rider.pay);
+    sheet.innerHTML = `<div class="grab"></div><h3 style="text-align:center">وصلت بالسلامة 🎉</h3>
+      <div class="receipt"><div class="row between"><span class="muted">الأجرة</span><b>${fmtMoney(rider.trip.fare)}</b></div><div class="row between"><span class="muted">الدفع</span><span>${pm.icon} ${pm.name} ${pm.id === "card" ? pm.sub : ""}</span></div></div>
+      <p style="text-align:center;margin:14px 0 0">إيه رأيك في الكابتن ${esc(rider.driver?.name)}؟</p>
+      <div class="stars">${[1, 2, 3, 4, 5].map(i => `<span data-s="${i}" class="${i <= rider.stars ? "on" : ""}">★</span>`).join("")}</div>
+      <button class="btn" id="rRate" ${rider.stars ? "" : "disabled"}>إرسال التقييم</button>
+      <div style="height:6px"></div><button class="btn ghost small" id="rSkip">تخطي</button>`;
+    sheet.querySelectorAll("[data-s]").forEach(el => el.onclick = () => { rider.stars = +el.dataset.s; renderRider(); });
+    sheet.querySelector("#rRate").onclick = () => {
+      server.rate(rider.trip.id, rider.stars);
+      const h = rider.history.find((x) => x.id === rider.trip.id); if (h) { h.stars = rider.stars; store.set("ft-rider-history", rider.history); }
+      riderToast("شكراً ليك 💚", "تقييمك بيساعدنا نحسن الخدمة"); riderReset();
+    };
+    sheet.querySelector("#rSkip").onclick = riderReset;
+  } else if (s === "cancelled") {
+    sheet.innerHTML = `<div class="grab"></div><h3>الرحلة اتلغت</h3><div class="banner err">${rider.trip.cancelledBy === "system" ? "مفيش كباتن قريبين دلوقتي" : rider.trip.cancelledBy === "driver" ? "الكابتن لغى الرحلة" : "إنت لغيت الرحلة"}</div><button class="btn" id="rAgain">اطلب تاني</button>`;
+    sheet.querySelector("#rAgain").onclick = riderReset;
+  }
+}
+function riderCancel() { if (rider.trip?.id) server.cancel(rider.trip.id, "rider", rider.id); }
+function riderReset() { rider.state = "home"; rider.dropoff = null; rider.trip = null; rider.driver = null; rider.stars = 0; rider.pickMode = "dropoff"; renderRider(); }
+
+// ---------- شاشات الزبون الإضافية: تسجيل الدخول، القايمة، رحلاتي، المحفظة، الحساب ----------
+function renderRiderOverlay() {
+  const drawer = document.getElementById("riderDrawer"), ov = document.getElementById("riderOverlay");
+  drawer.innerHTML = ""; ov.innerHTML = "";
+  if (!rider.profile || rider.view === "editProfile") {
+    const p = rider.profile || {};
+    ov.innerHTML = `${rider.profile ? `<div class="ohead"><button class="back" data-close>›</button><h3>تعديل الحساب</h3></div>` : `<div class="login-logo">${LOGO_SVG(64)}<b>في طريقك</b><span class="muted">أهلاً بيك! سجّل عشان تطلب أول رحلة</span></div>`}
+      <form id="rLogin"><label class="lbl">الاسم</label><input class="input" name="name" required maxlength="30" placeholder="مثلاً: محمود سادات" value="${esc(p.name)}">
+      <label class="lbl">رقم الموبايل</label><input class="input" name="phone" required inputmode="numeric" pattern="01[0-9]{9}" maxlength="11" placeholder="01xxxxxxxxx" value="${esc(p.phone)}" style="direction:ltr;text-align:right">
+      <button class="btn" type="submit">${rider.profile ? "حفظ" : "يلا بينا"}</button></form>
+      ${rider.profile ? "" : `<p class="muted" style="text-align:center;margin-top:14px">بالتسجيل إنت موافق على شروط الاستخدام وسياسة الخصوصية</p>`}`;
+    ov.querySelector("#rLogin").onsubmit = (e) => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      const prof = { name: String(f.get("name")).trim(), phone: String(f.get("phone")).trim() };
+      if (!prof.name) return;
+      rider.profile = prof; rider.id = "r-" + prof.phone; store.set("ft-rider", prof); rider.view = null;
+      if (LIVE) server.loginRider(rider.id, prof);
+      renderRider();
+    };
+  } else if (rider.view === "menu") {
+    drawer.innerHTML = `<div class="drawer-bg" data-close></div><div class="drawer">
+      <div class="row" style="margin-bottom:16px"><div class="avatar">${esc(rider.profile.name[0])}</div><div><b>${esc(rider.profile.name)}</b><div class="muted" style="direction:ltr;text-align:right">${esc(rider.profile.phone)}</div></div></div>
+      <div class="menu-item" data-go="history"><span class="mi">🧾</span>رحلاتي<span class="muted" style="margin-inline-start:auto">${ar(rider.history.length)}</span></div>
+      <div class="menu-item" data-go="wallet"><span class="mi">💳</span>المحفظة وطرق الدفع</div>
+      <div class="menu-item" data-go="editProfile"><span class="mi">👤</span>الحساب</div>
+      <div class="menu-item" data-go="help"><span class="mi">🛟</span>المساعدة</div>
+      <div style="flex:1"></div>
+      <div class="menu-item" data-go="logout" style="color:var(--danger)"><span class="mi">↩</span>تسجيل خروج</div></div>`;
+  } else if (rider.view === "history") {
+    ov.innerHTML = `<div class="ohead"><button class="back" data-close>›</button><h3>رحلاتي</h3></div>
+      ${rider.history.length ? rider.history.map((h) => `<div class="lrow"><span style="font-size:22px">${h.status === "completed" ? "🚗" : "✖️"}</span><div class="grow"><div class="ttl">${esc(h.pickupName)} ← ${esc(h.dropName)}</div>
+        <div class="muted">${timeAgo(h.at)}${h.driverName ? " · " + esc(h.driverName) : ""}${h.stars ? " · " + "★".repeat(h.stars) : ""}</div></div>
+        <div style="text-align:left"><b>${h.status === "completed" ? fmtMoney(h.fare) : "—"}</b><div class="muted">${h.status === "completed" ? payOf(h.pay).name : "اتلغت"}</div></div></div>`).join("")
+      : `<div class="empty"><div>🧾</div>لسه معملتش أي رحلة</div>`}`;
+  } else if (rider.view === "wallet") {
+    const spent = rider.history.filter((h) => h.status === "completed").reduce((a, h) => a + h.fare, 0);
+    ov.innerHTML = `<div class="ohead"><button class="back" data-close>›</button><h3>المحفظة وطرق الدفع</h3></div>
+      <div class="kv" style="margin-top:0"><div><span class="muted">رصيد المحفظة</span><b>١٥٠٫٠٠ ج.م</b></div><div><span class="muted">صرفت في رحلات</span><b>${fmtMoney(spent)}</b></div></div>
+      <div class="muted" style="margin:6px 0 8px">طريقة الدفع الأساسية</div>
+      ${PAY_METHODS.map((m) => `<div class="pay ${m.id === rider.pay ? "sel" : ""}" data-pay="${m.id}"><span style="font-size:22px">${m.icon}</span><div class="grow"><b>${m.name}</b><div class="muted">${m.sub}</div></div>${m.id === rider.pay ? "✓" : ""}</div>`).join("")}
+      <div class="muted" style="margin:14px 0 6px">عندك كود خصم؟</div>
+      <form id="promo" class="row" style="gap:8px"><input class="input" name="code" placeholder="FITARI2AK" style="margin:0;direction:ltr"><button class="btn small" style="width:auto;padding-inline:18px">تفعيل</button></form>
+      <div id="promoMsg" class="muted" style="margin-top:8px"></div>`;
+    ov.querySelectorAll("[data-pay]").forEach((el) => el.onclick = () => { rider.pay = el.dataset.pay; store.set("ft-pay", rider.pay); renderRider(); });
+    ov.querySelector("#promo").onsubmit = (e) => { e.preventDefault(); ov.querySelector("#promoMsg").textContent = "الكود ده مش شغال دلوقتي — الخصومات جاية قريب 😉"; };
+  } else if (rider.view === "help") {
+    ov.innerHTML = `<div class="ohead"><button class="back" data-close>›</button><h3>المساعدة</h3></div>
+      ${[["نسيت حاجة في العربية", "🎒"], ["مشكلة في الأجرة", "💸"], ["الكابتن مجاش", "⏱"], ["الأمان والطوارئ", "🛡️"]].map(([t, i]) => `<div class="lrow"><span style="font-size:20px">${i}</span><div class="grow ttl">${t}</div><span class="muted">›</span></div>`).join("")}`;
+  }
+  const close = () => { rider.view = null; renderRiderOverlay(); };
+  [...drawer.querySelectorAll("[data-close]"), ...ov.querySelectorAll("[data-close]")].forEach((b) => b.onclick = close);
+  drawer.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => {
+    if (b.dataset.go === "logout") { store.del("ft-rider"); rider.profile = null; rider.view = null; riderReset(); return; }
+    rider.view = b.dataset.go; renderRiderOverlay();
+  });
+}
+
+// =====================================================================
+//  تطبيق الكابتن (إنت)
+// =====================================================================
+const driverProfile = store.get("ft-driver");
+const me = {
+  profile: driverProfile, id: driverProfile ? "d-" + driverProfile.phone : "d-me", online: false, pos: offset(CENTER, 520, -380), heading: 0,
+  meta: driverProfile ? { name: driverProfile.name, car: driverProfile.car, plate: driverProfile.plate, baseRating: 4.93 } : { name: "كابتن", car: "تويوتا كورولا", plate: "م ش ر ١٨١١", baseRating: 4.93 },
+  state: "offline", offer: null, offerLeft: 0, trip: null, banner: null,
+  history: store.get("ft-driver-history") || [], sent: 0, view: null,
+  map: new MapView(document.getElementById("driverMap"), CENTER, 7),
+};
+const todayTrips = () => me.history.filter((h) => new Date(h.at).toDateString() === new Date().toDateString());
+Object.defineProperty(me, "earnings", { get: () => todayTrips().reduce((a, h) => a + (h.net || 0), 0) });
+Object.defineProperty(me, "tripsToday", { get: () => todayTrips().length });
+server.clients.drivers.set(me.id, (m) => meOnMsg(m));
+let meTimer = null;
+
+function goOnline(on) {
+  me.online = on;
+  if (on) {
+    me.state = "idle";
+    server.updateLocation(me.id, me.pos, me.meta);
+    meTimer = setInterval(() => { server.updateLocation(me.id, me.pos, me.meta); me.sent++; renderDriverTop(); }, 1000);
+  } else { clearInterval(meTimer); server.disconnect(me.id); me.state = "offline"; }
+  renderDriver();
+}
+function meOnMsg(m) {
+  if (m.type === "trip_offer") {
+    if (me.state !== "idle") { server.declineOffer(m.trip.id, me.id); return; }
+    me.offer = m; me.offerLeft = m.expiresIn; me.state = "offer"; me.banner = null;
+    clearInterval(me.offerT);
+    me.offerT = setInterval(() => { me.offerLeft--; if (me.offerLeft <= 0) { clearInterval(me.offerT); server.declineOffer(me.offer.trip.id, me.id); me.state = "idle"; me.banner = { cls: "warn", text: "العرض انتهى ⏱" }; renderDriver(); } else renderDriver(); }, 1000);
+    renderDriver();
+  } else if (m.type === "offer_withdrawn") {
+    if (me.state === "offer" && me.offer?.trip.id === m.tripId) {
+      clearInterval(me.offerT); me.state = "idle";
+      me.banner = m.reason === "taken" ? { cls: "warn", text: "كابتن تاني سبقك وقبل الرحلة دي 😅" } : { cls: "err", text: "الزبون لغى الطلب" };
+      renderDriver();
+    }
+  } else if (m.type === "trip_update") {
+    const t = m.trip, keep = me.trip && me.trip.id === t.id ? me.trip : me.offer?.trip || {};
+    if (me.state === "idle" && (t.status === "completed" || t.status === "cancelled")) return;
+    me.trip = { ...t, riderName: t.riderName || keep.riderName, pickupName: t.pickupName || keep.pickupName, dropoffName: t.dropoffName || keep.dropoffName };
+    if (t.status === "accepted") { me.state = "toPickup"; }
+    if (t.status === "cancelled") { me.state = "idle"; me.trip = null; me.banner = { cls: "err", text: "الزبون لغى الرحلة" }; }
+    renderDriver();
+  } else if (m.type === "earning") {
+    const h = me.history.find((x) => x.id === m.tripId) || me.history[0];
+    if (h && h.net == null) { h.net = m.amount; store.set("ft-driver-history", me.history); }
+    renderDriver(); if (me.view) renderDriverOverlay();
+  }
+}
+async function meAccept() {
+  clearInterval(me.offerT);
+  const tripId = me.offer.trip.id;
+  const race = document.getElementById("forceRace").checked;
+  let r;
+  if (race && !LIVE) {
+    const rival = [...(server.offers.get(tripId) || [])].find(id => id !== me.id);
+    if (rival) {
+      const sim = sims.find(s => s.id === rival); if (sim) { sim.pendingOffer = null; clearTimeout(sim.offerT); }
+      r = server.acceptConcurrently(tripId, [me.id, rival])[me.id];
+    } else r = await server.acceptTrip(tripId, me.id);
+  } else r = await server.acceptTrip(tripId, me.id);
+  if (r.ok && me.state === "offer") { me.trip = { ...me.offer.trip, status: "accepted", driverId: me.id }; me.state = "toPickup"; }
+  if (!r.ok && me.state !== "toPickup") { me.state = "idle"; me.banner = { cls: "warn", text: r.reason === "already_taken" ? "كابتن تاني سبقك بجزء من الثانية — السيرفر رفض قبولك (Conditional Update) 🏁" : "مش متاح" }; }
+  renderDriver();
+}
+
+function renderDriverTop() {
+  const top = document.getElementById("driverTop");
+  top.innerHTML = `<div class="pill btnish" id="dMenu">☰</div><div class="pill"><span class="dot ${me.online ? "on" : ""}"></span>${me.online ? "أونلاين" : "أوفلاين"}</div>
+    ${me.online ? `<div class="pill" title="رسايل WebSocket">📡 ${ar(me.sent)}</div>` : ""}
+    <div class="pill btnish" id="dEarn" style="margin-inline-start:auto">💰 ${fmtMoney(me.earnings)}</div>`;
+  top.querySelector("#dMenu").onclick = () => { me.view = "menu"; renderDriverOverlay(); };
+  top.querySelector("#dEarn").onclick = () => { me.view = "earnings"; renderDriverOverlay(); };
+}
+function renderDriver() {
+  renderDriverTop();
+  if (!me.view && !me.profile) renderDriverOverlay();
+  const sheet = document.getElementById("driverSheet"), s = me.state;
+  const banner = me.banner ? `<div class="banner ${me.banner.cls}">${me.banner.text}</div>` : "";
+  if (s === "offline" || s === "idle") {
+    const cell = me.online ? h3.latLngToCell(me.pos.lat, me.pos.lng, RES) : null;
+    sheet.innerHTML = `<div class="grab"></div>${banner}
+      <button class="toggle" id="dOnline"><span>${me.online ? "إنت أونلاين — مستني طلبات" : "ابدأ استقبال الطلبات"}</span><span class="switch ${me.online ? "on" : ""}"></span></button>
+      ${me.online ? `<div class="muted" style="margin-top:8px">📡 الأبلكيشن بيبعت مكانك كل ثانية على WebSocket<br>خليتك الحالية في H3: <code style="direction:ltr;display:inline-block">${cell}</code></div>` : `<div class="muted" style="margin-top:8px">لما تبقى أونلاين، مكانك بيتخزن في ميموري السيرفر بس (مش في قاعدة بيانات).</div>`}
+      <div class="kv"><div><span class="muted">أرباح النهاردة</span><b>${fmtMoney(me.earnings)}</b></div><div><span class="muted">رحلات النهاردة</span><b>${ar(me.tripsToday)}</b></div><div><span class="muted">تقييمك</span><b>★ ${server.avgRating(me.id).toFixed(2)}</b></div><div><span class="muted">نسبة القبول</span><b>٩٤٪</b></div></div>`;
+    sheet.querySelector("#dOnline").onclick = () => { me.banner = null; goOnline(!me.online); };
+  } else if (s === "offer") {
+    const t = me.offer.trip, frac = me.offerLeft / me.offer.expiresIn, C = 2 * Math.PI * 22;
+    sheet.innerHTML = `<div class="grab"></div><div class="offer">
+      <div class="row between"><div><div class="muted">طلب رحلة جديد · ${(RIDE_TYPES.find(x => x.id === t.type) || RIDE_TYPES[0]).name}</div><div class="price" style="font-size:26px">${fmtMoney(t.fare)}</div></div>
+      <div class="timer"><svg width="52" height="52"><circle cx="26" cy="26" r="22" stroke="#2a313c" stroke-width="4" fill="none"/><circle cx="26" cy="26" r="22" stroke="#22c55e" stroke-width="4" fill="none" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - frac)}" stroke-linecap="round"/></svg><span>${ar(me.offerLeft)}</span></div></div>
+      <div class="field" style="margin-top:10px"><span class="ic" style="background:var(--accent)"></span><span>${esc(t.pickupName || "نقطة على الخريطة")}</span><span class="muted" style="margin-inline-start:auto">على بعد ${ar(Math.round(me.offer.distance))} م</span></div>
+      <div class="field"><span class="ic sq" style="background:#fff"></span><span>${esc(t.dropoffName || "الوجهة")}</span><span class="muted" style="margin-inline-start:auto">${(dist(t.pickup, t.dropoff) / 1000).toFixed(1)} كم</span></div>
+      <div class="muted" style="margin-bottom:10px">الزبون: ${esc(t.riderName || "زبون")} · الطلب اتبعت لأقرب ٣ كباتن</div>
+      <div class="row" style="gap:8px"><button class="btn ghost" id="dDecline" style="width:40%">رفض</button><button class="btn" id="dAccept">قبول</button></div></div>`;
+    sheet.querySelector("#dAccept").onclick = meAccept;
+    sheet.querySelector("#dDecline").onclick = () => { clearInterval(me.offerT); server.declineOffer(t.id, me.id); me.state = "idle"; renderDriver(); };
+  } else if (s === "toPickup" || s === "atPickup" || s === "onTrip" || s === "atDrop") {
+    const t = me.trip;
+    const toPick = s === "toPickup" || s === "atPickup";
+    const tgt = toPick ? t.pickup : t.dropoff;
+    const left = dist(me.pos, tgt);
+    const titles = { toPickup: "اتجه لنقطة الركوب", atPickup: "مستني الزبون", onTrip: "في الطريق للوجهة", atDrop: "وصلت للوجهة" };
+    const btns = {
+      toPickup: `<button class="btn" id="dAct" ${left > 40 ? "disabled" : ""}>وصلت ✓</button>`,
+      atPickup: `<button class="btn" id="dAct">ابدأ الرحلة ▶</button>`,
+      onTrip: `<button class="btn" id="dAct" ${left > 40 ? "disabled" : ""}>إنهاء الرحلة</button>`,
+      atDrop: `<button class="btn" id="dAct">إنهاء الرحلة</button>`,
+    };
+    const rn = t.riderName || "الزبون";
+    sheet.innerHTML = `<div class="grab"></div>${banner}<h3>${titles[s]}</h3>
+      <div class="kv"><div><span class="muted">المسافة</span><b>${left < 40 ? "وصلت" : (left / 1000).toFixed(2) + " كم"}</b></div><div><span class="muted">الأجرة</span><b>${fmtMoney(t.fare)}</b></div></div>
+      <div class="driver-card"><div class="avatar">${esc(rn[0])}</div><div style="flex:1"><b>${esc(rn)}</b><div class="muted">${toPick ? "📍 " + esc(t.pickupName || "نقطة الركوب") : "🏁 " + esc(t.dropoffName || "الوجهة")}</div></div><span>📞</span></div>
+      ${btns[s]}
+      ${toPick ? `<div style="height:6px"></div><button class="btn danger small" id="dCancel">إلغاء</button>` : ""}`;
+    sheet.querySelector("#dAct").onclick = async (ev) => {
+      ev.target.disabled = true;
+      if (s === "toPickup") { if (await server.transition(t.id, "arrive", me.id)) me.state = "atPickup"; }
+      else if (s === "atPickup") { if (await server.transition(t.id, "start", me.id)) me.state = "onTrip"; }
+      else if (await server.complete(t.id, me.id)) {
+        me.history.unshift({ id: t.id, at: Date.now(), fare: t.fare, net: null, riderName: t.riderName, pickupName: t.pickupName, dropoffName: t.dropoffName, km: dist(t.pickup, t.dropoff) / 1000 });
+        me.history = me.history.slice(0, 100); store.set("ft-driver-history", me.history);
+        me.state = "idle"; me.trip = null; me.banner = { cls: "ok", text: "الرحلة خلصت ✓ — الدفع والحسابات بتتعمل في الخلفية" };
+      }
+      me.banner = me.state === "idle" ? me.banner : null; renderDriver();
+    };
+    const c = sheet.querySelector("#dCancel"); if (c) c.onclick = async () => { if (await server.cancel(t.id, "driver", me.id)) { me.state = "idle"; me.trip = null; me.banner = null; renderDriver(); } };
+  }
+}
+
+// ---------- شاشات الكابتن الإضافية: التسجيل، القايمة، الأرباح، رحلاتي، البروفايل ----------
+function renderDriverOverlay() {
+  const drawer = document.getElementById("driverDrawer"), ov = document.getElementById("driverOverlay");
+  drawer.innerHTML = ""; ov.innerHTML = "";
+  if (!me.profile || me.view === "editProfile") {
+    const p = me.profile || {};
+    ov.innerHTML = `${me.profile ? `<div class="ohead"><button class="back" data-close>›</button><h3>تعديل البيانات</h3></div>` : `<div class="login-logo">${LOGO_SVG(56)}<b>في طريقك — كابتن</b><span class="muted">سجّل بياناتك وبيانات عربيتك</span></div>`}
+      <form id="dLogin"><label class="lbl">الاسم</label><input class="input" name="name" required maxlength="30" placeholder="الاسم زي البطاقة" value="${esc(p.name)}">
+      <label class="lbl">رقم الموبايل</label><input class="input" name="phone" required inputmode="numeric" pattern="01[0-9]{9}" maxlength="11" placeholder="01xxxxxxxxx" value="${esc(p.phone)}" style="direction:ltr;text-align:right">
+      <label class="lbl">العربية</label><select class="input" name="car">${CARS.map((c) => `<option ${c === p.car ? "selected" : ""}>${c}</option>`).join("")}</select>
+      <label class="lbl">النمرة</label><input class="input" name="plate" required maxlength="14" placeholder="مثلاً: م ش ر ١٨١١" value="${esc(p.plate)}">
+      <button class="btn" type="submit">${me.profile ? "حفظ" : "سجّل وابدأ"}</button></form>`;
+    ov.querySelector("#dLogin").onsubmit = (e) => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      const prof = { name: String(f.get("name")).trim(), phone: String(f.get("phone")).trim(), car: String(f.get("car")), plate: String(f.get("plate")).trim() };
+      if (me.online) goOnline(false);
+      server.clients.drivers.delete(me.id);
+      me.profile = prof; me.id = "d-" + prof.phone; me.meta = { ...me.meta, name: prof.name, car: prof.car, plate: prof.plate };
+      server.clients.drivers.set(me.id, (m) => meOnMsg(m));
+      store.set("ft-driver", prof); me.view = null; renderDriver(); renderDriverOverlay();
+    };
+  } else if (me.view === "menu") {
+    drawer.innerHTML = `<div class="drawer-bg" data-close></div><div class="drawer">
+      <div class="row" style="margin-bottom:16px"><div class="avatar">${esc(me.profile.name[0])}</div><div><b>${esc(me.profile.name)}</b><div class="muted">${esc(me.profile.car)} · <span class="plate" style="font-size:11px">${esc(me.profile.plate)}</span></div></div></div>
+      <div class="menu-item" data-go="earnings"><span class="mi">💰</span>الأرباح<span class="muted" style="margin-inline-start:auto">${fmtMoney(me.earnings)}</span></div>
+      <div class="menu-item" data-go="history"><span class="mi">🧾</span>رحلاتي<span class="muted" style="margin-inline-start:auto">${ar(me.history.length)}</span></div>
+      <div class="menu-item" data-go="editProfile"><span class="mi">🚗</span>بياناتي وبيانات العربية</div>
+      <div style="flex:1"></div>
+      <div class="menu-item" data-go="logout" style="color:var(--danger)"><span class="mi">↩</span>تسجيل خروج</div></div>`;
+  } else if (me.view === "earnings") {
+    const today = todayTrips(), gross = today.reduce((a, h) => a + h.fare, 0), net = me.earnings, fee = gross - net;
+    const hours = Array.from({ length: 8 }, (_, i) => { const h = (new Date().getHours() - 7 + i + 24) % 24; return { h, v: today.filter((t) => new Date(t.at).getHours() === h).reduce((a, t) => a + (t.net || 0), 0) }; });
+    const max = Math.max(1, ...hours.map((x) => x.v));
+    ov.innerHTML = `<div class="ohead"><button class="back" data-close>›</button><h3>أرباح النهاردة</h3></div>
+      <div style="text-align:center;margin:6px 0 4px"><div class="muted">صافي ليك</div><div class="price" style="font-size:34px">${fmtMoney(net)}</div><div class="muted">${ar(today.length)} رحلة</div></div>
+      <div class="bars">${hours.map((x) => `<div style="height:${(x.v / max) * 100}%"></div>`).join("")}</div>
+      <div class="bars-l">${hours.map((x) => `<span>${x.h}</span>`).join("")}</div>
+      <div class="receipt" style="margin-top:12px">
+        <div class="row between"><span class="muted">إجمالي الأجرة</span><b>${fmtMoney(gross)}</b></div>
+        <div class="row between"><span class="muted">عمولة المنصة (٢٠٪)</span><b>−${fmtMoney(fee)}</b></div>
+        <div class="row between"><span class="muted">الصافي</span><b style="color:var(--accent)">${fmtMoney(net)}</b></div></div>
+      <div class="muted" style="margin:14px 0 4px">الأرقام دي جاية من خدمة الحسابات (قيد مزدوج) بعد ما الدفع ينجح</div>
+      ${today.slice(0, 20).map((h) => `<div class="lrow"><span>🚗</span><div class="grow"><div class="ttl">${esc(h.dropoffName || "رحلة")}</div><div class="muted">${timeAgo(h.at)} · ${h.km.toFixed(1)} كم</div></div><b>${h.net == null ? "…" : "+" + fmtMoney(h.net)}</b></div>`).join("")}`;
+  } else if (me.view === "history") {
+    ov.innerHTML = `<div class="ohead"><button class="back" data-close>›</button><h3>رحلاتي</h3></div>
+      ${me.history.length ? me.history.map((h) => `<div class="lrow"><span style="font-size:20px">🚗</span><div class="grow"><div class="ttl">${esc(h.pickupName || "—")} ← ${esc(h.dropoffName || "—")}</div><div class="muted">${timeAgo(h.at)} · ${esc(h.riderName || "زبون")}</div></div><div style="text-align:left"><b>${fmtMoney(h.fare)}</b><div class="muted">${h.net == null ? "" : "صافي " + fmtMoney(h.net)}</div></div></div>`).join("")
+      : `<div class="empty"><div>🧾</div>لسه معملتش رحلات — خليك أونلاين واستقبل طلبات</div>`}`;
+  }
+  const close = () => { me.view = null; renderDriverOverlay(); };
+  [...drawer.querySelectorAll("[data-close]"), ...ov.querySelectorAll("[data-close]")].forEach((b) => b.onclick = close);
+  drawer.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => {
+    if (b.dataset.go === "logout") { if (me.online) goOnline(false); store.del("ft-driver"); me.profile = null; me.view = null; renderDriver(); renderDriverOverlay(); return; }
+    me.view = b.dataset.go; renderDriverOverlay();
+  });
+}
+
+// =====================================================================
+//  الحلقة الرئيسية: حركة + رسم
+// =====================================================================
+let last = performance.now(), lastSheet = 0;
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  for (const s of sims) s.step(dt);
+  if (LIVE) server.tick();
+
+  // حركة الكابتن (إنت)
+  if (me.online && me.trip && (me.state === "toPickup" || me.state === "onTrip")) {
+    const tgt = me.state === "toPickup" ? me.trip.pickup : me.trip.dropoff, prev = me.pos;
+    me.pos = moveToward(me.pos, tgt, 11 * SIM_SPEED * dt);
+    if (dist(prev, me.pos) > 0.3) me.heading = bearing(prev, me.pos);
+  }
+
+  // ===== خريطة الزبون =====
+  const rm = rider.map;
+  const hl = new Map();
+  const ls = server.lastSearch;
+  if (ls) {
+    const age = (Date.now() - ls.at) / 1000;
+    if (age < 6) ls.rings.forEach((ring, k) => { if (age * 4 > k) ring.forEach(c => hl.set(c, `rgba(168,85,247,${Math.max(0, .28 - k * .05) * (1 - age / 6)})`)); });
+  }
+  rm.drawBase(hl);
+  if (rider.dropoff) { rm.line(rider.pickup, rider.dropoff, "rgba(255,255,255,.35)", true); rm.pin(rider.dropoff, "#e2e8f0", true); }
+  for (const d of server.drivers.values()) {
+    const mine = rider.driver && d.id === rider.driver.id;
+    if (rider.driver && !mine && rider.state !== "home") continue;
+    const h = d.id === me.id ? me.heading : (LIVE ? d.heading || 0 : (sims.find(s => s.id === d.id)?.heading || 0));
+    rm.car(d.pos, h, mine ? "#22c55e" : d.status === "busy" ? "#64748b" : "#e2e8f0", mine ? d.name : null, mine ? "rgba(34,197,94,.2)" : null);
+  }
+  if (rider.state === "searching") rm.circle(rider.pickup, 300 + ((now / 4) % 900), "rgba(34,197,94,.5)");
+  if (!["onTrip", "rate"].includes(rider.state)) rm.pin(rider.pickup, "#22c55e");
+  if (rider.state === "onTrip" && rider.driver) { const live = server.drivers.get(rider.driver.id); if (live) rm.center = { lat: rm.center.lat + (live.pos.lat - rm.center.lat) * .05, lng: rm.center.lng + (live.pos.lng - rm.center.lng) * .05 }; }
+  if (rider.state === "home") rm.center = { ...rider.pickup };
+
+  // ===== خريطة الكابتن =====
+  const dm = me.map;
+  dm.center = me.online ? { ...me.pos } : { ...me.pos };
+  dm.drawBase(new Map(me.online ? [[h3.latLngToCell(me.pos.lat, me.pos.lng, RES), "rgba(34,197,94,.12)"]] : []));
+  for (const s of (LIVE ? [...server.drivers.values()].filter(d => d.id !== me.id) : sims)) dm.car(s.pos, s.heading || 0, "#475569");
+  if (me.trip && me.state !== "idle") {
+    const tgt = me.state === "toPickup" || me.state === "atPickup" ? me.trip.pickup : me.trip.dropoff;
+    dm.line(me.pos, tgt, "#3b82f6");
+    dm.pin(me.trip.pickup, "#22c55e");
+    dm.pin(me.trip.dropoff, "#e2e8f0", true);
+  } else if (me.state === "offer") { dm.line(me.pos, me.offer.trip.pickup, "rgba(34,197,94,.7)", true); dm.pin(me.offer.trip.pickup, "#22c55e"); }
+  dm.car(me.pos, me.heading, me.online ? "#22c55e" : "#94a3b8", null, me.online ? "rgba(34,197,94,.25)" : null);
+
+  // تحديث النصوص كل ٥٠٠ms (المسافة/الوقت المتبقي)
+  if (now - lastSheet > 500) {
+    lastSheet = now;
+    if (["accepted", "arrived", "onTrip"].includes(rider.state)) renderRider();
+    if (["toPickup", "onTrip"].includes(me.state)) {
+      renderDriver();
+    }
+    document.getElementById("s-online").textContent = server.drivers.size;
+    document.getElementById("s-ups").textContent = server.ups;
+    if (server.lastSearch) document.getElementById("s-h3").textContent = `${server.lastSearch.scanned} خلية · ${server.lastSearch.ms.toFixed(2)}ms`;
+    const t = new Date().toLocaleTimeString("ar-EG", { hour: "numeric", minute: "2-digit" });
+    document.getElementById("clock1").textContent = t; document.getElementById("clock2").textContent = t;
+  }
+  requestAnimationFrame(frame);
+}
+
+// تابات الموبايل
+document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => {
+  document.querySelectorAll("[data-col]").forEach(c => c.classList.toggle("hide-m", c.dataset.col !== b.dataset.tab));
+});
+if (!APP && matchMedia("(max-width: 820px)").matches) document.querySelectorAll('[data-col]:not([data-col="rider"])').forEach(c => c.classList.add("hide-m"));
+
+if (LIVE) {
+  document.querySelector('label:has(#forceRace)').lastChild.textContent = " اعرض أحداث كل الرحلات (مش رحلاتي بس)";
+  document.querySelector('label:has(#showWs)').style.display = "none";
+  document.querySelector(".brand small").textContent = "متوصل بالسيرفر الحقيقي — الوضع المباشر";
+} else {
+  log("SYS", "mock server started: 34 simulated drivers streaming locations over WebSocket every ~1s", "");
+  log("SYS", "tip: turn the captain online, request a ride from the rider app, then accept on the captain app", "");
+}
+// تطبيق الكابتن لوحده من غير سيرفر: زباين تجريبيين بيطلبوا رحلات قريبة منك
+if (APP === "driver" && !LIVE) {
+  const NAMES = ["محمود", "سارة", "يوسف", "نور", "كريم", "منة", "عمر", "هنا", "مصطفى", "ريم"];
+  let n = 0;
+  setInterval(() => {
+    if (!me.online || me.state !== "idle") return;
+    const ang = Math.random() * Math.PI * 2, r = 250 + Math.random() * 500;
+    const pickup = offset(me.pos, Math.cos(ang) * r, Math.sin(ang) * r);
+    const far = PLACES.filter((p) => dist(p.p, pickup) > 900);
+    const dest = far[Math.floor(Math.random() * far.length)] || PLACES[0];
+    const type = RIDE_TYPES[Math.random() < 0.7 ? 0 : 1];
+    server.requestTrip("r-sim-" + ++n, pickup, dest.p, type, { riderName: NAMES[n % NAMES.length], pickupName: placeName(pickup), dropoffName: dest.name });
+  }, 9000);
+}
+
+// تثبيت التطبيق على الموبايل (PWA)
+if (APP && "serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost"))
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+
+renderRider(); renderDriver(); renderDriverOverlay();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

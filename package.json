@@ -1,0 +1,29 @@
+{
+  "name": "fi-tari2ak",
+  "version": "1.0.0",
+  "description": "Uber-like ride-hailing backend: WebSocket + H3 + CAS + state machine + message queue",
+  "scripts": {
+    "predev": "node ui/build.mjs",
+    "dev": "tsx sim/live.ts",
+    "prestart": "node ui/build.mjs",
+    "start": "tsx src/index.ts",
+    "sim": "tsx sim/simulator.ts",
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "ui:build": "node ui/build.mjs",
+    "bench": "tsx bench/locationBench.ts"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "h3-js": "^4.5.0",
+    "ws": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "type": "module"
+}
