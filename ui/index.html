@@ -338,6 +338,16 @@ async function reverseName(p) {
   } catch { return null; }
 }
 // الـ GPS بتاع الموبايل
+// متابعة الـ GPS باستمرار: أول قراءة بتبقى تقريبية، وبعدها بتدق لحد ما توصل لمكانك بالظبط
+const gps = { pos: null, acc: null, err: null, id: null, subs: new Set() };
+function startGps() {
+  if (gps.id != null || !navigator.geolocation) return;
+  gps.id = navigator.geolocation.watchPosition((g) => {
+    gps.pos = { lat: g.coords.latitude, lng: g.coords.longitude }; gps.acc = g.coords.accuracy; gps.err = null;
+    gps.subs.forEach((f) => f(gps));
+  }, (e) => { gps.err = e; if (e.code === 1) { navigator.geolocation.clearWatch(gps.id); gps.id = null; } gps.subs.forEach((f) => f(gps)); },
+  { enableHighAccuracy: true, maximumAge: 0, timeout: 25000 });
+}
 function getGps() {
   return new Promise((res, rej) => {
     if (!navigator.geolocation) return rej(new Error("unsupported"));
@@ -596,6 +606,13 @@ class MapView {
       c.fillStyle = "#cbd5e1"; c.fillText(pl.name, x, y - 12);
     }
     c.restore();
+  }
+  // نقطة زرقا = مكانك الحقيقي من الـ GPS، والدايرة حواليها = الدقة
+  gpsDot(p, accM) {
+    if (!p) return;
+    const c = this.ctx, [x, y] = this.proj(p), r = Math.max(9, accM / this.mpp);
+    c.beginPath(); c.arc(x, y, r, 0, 7); c.fillStyle = "rgba(59,130,246,.14)"; c.fill(); c.strokeStyle = "rgba(59,130,246,.45)"; c.lineWidth = 1; c.stroke();
+    c.beginPath(); c.arc(x, y, 6.5, 0, 7); c.fillStyle = "#3b82f6"; c.fill(); c.strokeStyle = "#fff"; c.lineWidth = 2.5; c.stroke();
   }
   // اسم المكان فوق علامة الركوب/الوجهة
   pinLabel(p, text, color = "#22c55e") {
@@ -1159,7 +1176,7 @@ function riderToast(title, body) {
   document.getElementById("rider").appendChild(el); setTimeout(() => el.remove(), 3200);
 }
 function setRiderPoint(mode, p, name) {
-  if (mode === "pickup") { rider.pickup = p; rider.pickName = name; rider.pickMode = "dropoff"; }
+  if (mode === "pickup") { rider.pickup = p; rider.pickName = name; rider.pickMode = "dropoff"; rider.followGps = false; rider.pickFromGps = false; }
   else { rider.dropoff = p; rider.dropName = name; }
   rider.state = rider.dropoff ? "choose" : "home";
   renderRider();
@@ -1208,23 +1225,39 @@ function riderSearch(q) {
     draw(list.length ? "" : `<div class="empty" style="padding:24px 0"><div>🔎</div>ملقيناش «${esc(q)}» — جرب اسم تاني أو دوس على الخريطة</div>`);
   }, 350);
 }
-async function useMyLocation(msgEl) {
+function useMyLocation(msgEl) {
   if (msgEl) msgEl.textContent = "بنحدد مكانك…";
-  try {
-    const p = await getGps();
-    moveWorldTo(p);
-    rider.pickup = p; rider.pickName = "مكانك الحالي"; rider.located = true;
-    if (rider.dropoff && dist(rider.dropoff, p) > 60000) rider.dropoff = null;
-    rider.pickMode = "dropoff"; rider.state = rider.dropoff ? "choose" : "home"; renderRider();
-    const nm = await reverseName(p);
-    if (nm && rider.pickup === p) { rider.pickName = nm; if (["home", "choose"].includes(rider.state)) renderRider(); }
-  } catch (e) {
-    const why = e && e.code === 1 ? "إنت رافض صلاحية اللوكيشن — فعّلها من إعدادات المتصفح" : "مقدرناش نحدد مكانك دلوقتي";
-    if (msgEl) msgEl.textContent = why; else riderToast("📍 اللوكيشن", why);
+  rider.followGps = true; rider.gpsMsgEl = msgEl;
+  if (gps.pos) riderGpsFix(gps, true);
+  if (!navigator.geolocation) { riderToast("📍 اللوكيشن", "المتصفح ده مش بيدعم تحديد المكان"); return; }
+  startGps();
+}
+let lastNamedAcc = Infinity;
+function riderGpsFix(g, force) {
+  if (g.err && !g.pos) {
+    const why = g.err.code === 1 ? "إنت رافض صلاحية اللوكيشن — فعّلها من إعدادات المتصفح" : "مقدرناش نحدد مكانك — اتأكد إن الـ GPS شغال";
+    if (rider.gpsMsgEl?.isConnected) rider.gpsMsgEl.textContent = why; else if (rider.followGps) riderToast("📍 اللوكيشن", why);
+    rider.followGps = false; return;
+  }
+  if (!g.pos || !rider.followGps || !["home", "choose"].includes(rider.state)) return;
+  const first = rider.pickName !== "مكانك الحالي" && !rider.pickFromGps;
+  // بنحرك نقطة الركوب بس لو القراءة الجديدة أدق أو إنت اتحركت فعلاً
+  if (!force && rider.pickFromGps && dist(g.pos, rider.pickup) < Math.max(12, g.acc * 0.3)) { renderRiderTopOnly(); return; }
+  moveWorldTo(g.pos);
+  rider.pickup = { ...g.pos }; rider.pickFromGps = true;
+  if (first) { rider.pickName = "مكانك الحالي"; rider.pickMode = "dropoff"; }
+  if (rider.dropoff && dist(rider.dropoff, g.pos) > 60000) rider.dropoff = null;
+  rider.state = rider.dropoff ? "choose" : "home";
+  if (document.activeElement?.id !== "rSearch") renderRider();
+  if (g.acc < lastNamedAcc * 0.6 || first) {
+    lastNamedAcc = g.acc; const at = rider.pickup;
+    reverseName(at).then((nm) => { if (nm && rider.pickup === at && rider.pickFromGps) { rider.pickName = nm; if (["home", "choose"].includes(rider.state) && document.activeElement?.id !== "rSearch") renderRider(); } });
   }
 }
-// لو الصلاحية متاحة من قبل، نحدد مكانك أول ما التطبيق يفتح
-if (navigator.permissions) navigator.permissions.query({ name: "geolocation" }).then((st) => { if (st.state === "granted") useMyLocation(); }).catch(() => {});
+function renderRiderTopOnly() { /* الدقة اتحدثت بس — الخريطة بترسمها لوحدها */ }
+gps.subs.add((g) => riderGpsFix(g));
+// أول ما التطبيق يفتح (وإنت مسجل) بنحدد مكانك
+if (rider.profile && (APP === "rider" || !APP)) setTimeout(() => useMyLocation(), 300);
 
 function renderRider() {
   renderRiderOverlay();
@@ -1250,6 +1283,7 @@ function renderRider() {
     const pm = rider.pickMode;
     sheet.innerHTML = `<div class="grab"></div><h3>${pm === "pickup" ? "هتركب منين؟" : "رايح فين؟"}</h3>
       ${pointFields(true)}
+      ${rider.pickFromGps && pm === "dropoff" ? `<div class="muted" style="font-size:12px;margin:-2px 2px 6px">📍 مكانك من الـ GPS${gps.acc ? ` (دقة ± ${ar(Math.round(gps.acc))} م)` : ""} — مش مظبوط؟ دوس «تغيير» وبعدين دوس على مكانك في الخريطة</div>` : ""}
       <div class="search"><span>🔍</span><input id="rSearch" autocomplete="off" enterkeyhint="search" placeholder="${pm === "pickup" ? "ابحث عن مكان الركوب" : "ابحث عن المكان اللي رايحه"}"></div>
       <div id="rResults"></div>`;
     bindFields();
@@ -1342,7 +1376,7 @@ function renderRiderOverlay() {
       if (!prof.name) return;
       rider.profile = prof; rider.id = "r-" + prof.phone; store.set("ft-rider", prof); rider.view = null;
       if (LIVE) server.loginRider(rider.id, prof);
-      renderRider();
+      renderRider(); if (!rider.pickFromGps) useMyLocation();
     };
   } else if (rider.view === "menu") {
     drawer.innerHTML = `<div class="drawer-bg" data-close></div><div class="drawer">
@@ -1536,6 +1570,7 @@ function renderDriverOverlay() {
       me.profile = prof; me.id = "d-" + prof.phone; me.meta = { ...me.meta, name: prof.name, car: prof.car, plate: prof.plate };
       server.clients.drivers.set(me.id, (m) => meOnMsg(m));
       store.set("ft-driver", prof); me.view = null; renderDriver(); renderDriverOverlay();
+      if (APP === "driver") startGps();
     };
   } else if (me.view === "menu") {
     drawer.innerHTML = `<div class="drawer-bg" data-close></div><div class="drawer">
@@ -1605,6 +1640,7 @@ function frame(now) {
     rm.car(d.pos, h, mine ? "#22c55e" : d.status === "busy" ? "#64748b" : "#e2e8f0", mine ? d.name : null, mine ? "rgba(34,197,94,.2)" : null);
   }
   if (rider.state === "searching") rm.circle(rider.pickup, 300 + ((now / 4) % 900), "rgba(34,197,94,.5)");
+  rm.gpsDot(gps.pos, gps.acc);
   if (!["onTrip", "rate"].includes(rider.state)) { rm.pin(rider.pickup, "#22c55e"); rm.pinLabel(rider.pickup, rider.pickName); }
   // الكاميرا: بتجمع النقط المهمة في الجزء اللي باين من الخريطة فوق الـ sheet
   // (لو إنت حركت أو عملت زوم بإيدك، بتسيبك لحد ما الحالة تتغير أو تدوس ◎)
@@ -1640,6 +1676,7 @@ function frame(now) {
     dm.pin(me.trip.pickup, "#22c55e"); dm.pin(me.trip.dropoff, "#e2e8f0", true);
     if (me.state === "toPickup" || me.state === "atPickup") dm.pinLabel(me.trip.pickup, me.trip.pickupName); else dm.pinLabel(me.trip.dropoff, me.trip.dropoffName, "#e2e8f0");
   } else if (me.state === "offer") { dm.line(me.pos, me.offer.trip.pickup, "rgba(34,197,94,.7)", true); dm.pin(me.offer.trip.pickup, "#22c55e"); dm.pinLabel(me.offer.trip.pickup, me.offer.trip.pickupName); }
+  if (APP === "driver" && gps.pos && dist(gps.pos, me.pos) > 25) dm.gpsDot(gps.pos, gps.acc);
   dm.car(me.pos, me.heading, me.online ? "#22c55e" : "#94a3b8", null, me.online ? "rgba(34,197,94,.25)" : null);
 
   // تحديث النصوص كل ٥٠٠ms (المسافة/الوقت المتبقي)
@@ -1672,6 +1709,18 @@ if (LIVE) {
   log("SYS", "mock server started: 34 simulated drivers streaming locations over WebSocket every ~1s", "");
   log("SYS", "tip: turn the captain online, request a ride from the rider app, then accept on the captain app", "");
 }
+// تطبيق الكابتن لوحده: مكانك الحقيقي من الـ GPS (وإنت مستني أو أوفلاين — أثناء الرحلة العربية بتتحرك في المحاكاة)
+if (APP === "driver") {
+  gps.subs.add((g) => {
+    if (!g.pos) { if (g.err?.code === 1 && !me.gpsWarned) { me.gpsWarned = true; me.banner = { cls: "warn", text: "📍 فعّل صلاحية اللوكيشن عشان الطلبات تيجيلك على مكانك الحقيقي" }; renderDriver(); } return; }
+    if (!["offline", "idle", "offer"].includes(me.state)) return;
+    if (!me.gpsSet) { moveWorldTo(g.pos); me.gpsSet = true; }
+    me.pos = { ...g.pos };
+    if (me.online) server.updateLocation(me.id, me.pos, me.meta);
+  });
+  if (me.profile) startGps();
+}
+
 // تطبيق الكابتن لوحده من غير سيرفر: زباين تجريبيين بيطلبوا رحلات قريبة منك
 if (APP === "driver" && !LIVE) {
   const NAMES = ["محمود", "سارة", "يوسف", "نور", "كريم", "منة", "عمر", "هنا", "مصطفى", "ريم"];
