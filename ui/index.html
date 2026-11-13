@@ -288,14 +288,14 @@ function dist(a, b) {
   const h = Math.sin(dLat/2)**2 + Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dLng/2)**2;
   return 2 * R * Math.asin(Math.sqrt(h));
 }
-function offset(p, dxM, dyM) { return { lat: p.lat + dyM / M_PER_DEG_LAT, lng: p.lng + dxM / M_PER_DEG_LNG }; }
+function offset(p, dxM, dyM) { return { lat: p.lat + dyM / M_PER_DEG_LAT, lng: p.lng + dxM / (M_PER_DEG_LAT * Math.cos(p.lat * Math.PI / 180)) }; }
 function moveToward(p, target, meters) {
   const d = dist(p, target);
   if (d <= meters) return { ...target };
   const t = meters / d;
   return { lat: p.lat + (target.lat - p.lat) * t, lng: p.lng + (target.lng - p.lng) * t };
 }
-function bearing(a, b) { return Math.atan2((b.lng - a.lng) * M_PER_DEG_LNG, (b.lat - a.lat) * M_PER_DEG_LAT); }
+function bearing(a, b) { return Math.atan2((b.lng - a.lng) * Math.cos(a.lat * Math.PI / 180), b.lat - a.lat); }
 function rand(a, b) { return a + Math.random() * (b - a); }
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
@@ -326,9 +326,10 @@ function searchLocal(q) {
 }
 // بحث أونلاين في OpenStreetMap (لو فيه نت) — محصور في القاهرة الكبرى
 async function searchOnline(q, signal) {
-  const u = `https://nominatim.openstreetmap.org/search?format=jsonv2&accept-language=ar&countrycodes=eg&viewbox=30.85,30.25,31.75,29.80&bounded=1&limit=6&q=${encodeURIComponent(q)}`;
+  const near = typeof rider !== "undefined" ? rider.pickup : CENTER, d = 1.5;
+  const u = `https://nominatim.openstreetmap.org/search?format=jsonv2&accept-language=ar&limit=7&viewbox=${near.lng - d},${near.lat + d},${near.lng + d},${near.lat - d}&q=${encodeURIComponent(q)}`;
   const r = await fetch(u, { signal }); if (!r.ok) return [];
-  return (await r.json()).map((x) => { const parts = x.display_name.split("،").map((t) => t.trim()); return { name: x.name || parts[0], sub: parts.slice(1, 3).join("، "), p: { lat: +x.lat, lng: +x.lon } }; });
+  return (await r.json()).map((x) => { const parts = x.display_name.split(/[،,]/).map((t) => t.trim()); return { name: x.name || parts[0], sub: parts.slice(1, 3).join("، "), p: { lat: +x.lat, lng: +x.lon } }; });
 }
 async function reverseName(p) {
   try {
@@ -404,6 +405,7 @@ function fareCents(a, b, mult = 1) { return Math.round((1500 + dist(a, b) / 1000
 // شوارع وهمية (شكل خريطة فقط) — شبكة بتتولد حوالين أي مكان على الخريطة
 const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 function roadsNear(view) {
+  if (view.mpp > 200 || dist(view.center, CENTER) > 60000) return [];
   const cx = (view.center.lng - CENTER.lng) * M_PER_DEG_LNG, cy = (view.center.lat - CENTER.lat) * M_PER_DEG_LAT;
   const hw = view.w * view.mpp * 0.7 + 800, hh = view.h * view.mpp * 0.8 + 800, roads = [];
   // كل شارع خط ثابت: y = i·420 + إزاحة + ميل·x (فمبيتحركش لما الخريطة تتحرك)
@@ -449,20 +451,22 @@ const realMap = () => tilesOk > 0 || tilesFail < 6;
 class MapView {
   constructor(canvas, center, mpp) {
     this.cv = canvas; this.ctx = canvas.getContext("2d");
-    this.center = { ...center }; this.mpp = mpp; this.cellCache = { key: "", cells: [] };
+    this.center = { ...center }; this.s = 1; this.mpp = mpp; this.cellCache = { key: "", cells: [] };
     new ResizeObserver(() => this.resize()).observe(canvas); this.resize();
     this.manual = false; this.dragged = false; this.initGestures();
   }
   // الزوم: بصباعين، بعجلة الماوس، أو بالزراير — والسحب بيحرك الخريطة
   zoomAt(factor, ax = this.w / 2, ay = this.cy) {
     const before = this.unproj(ax, ay);
-    this.mpp = Math.max(1.5, Math.min(120, this.mpp * factor));
+    this.s = Math.max(Math.max(this.w, 1) / 256, Math.min(156543.03 / 1.2, this.s / factor));
     const after = this.unproj(ax, ay);
-    this.center = { lat: this.center.lat + before.lat - after.lat, lng: this.center.lng + before.lng - after.lng };
+    let dl = before.lng - after.lng; if (dl > 180) dl -= 360; else if (dl < -180) dl += 360;
+    this.center = { lat: Math.max(-84, Math.min(84, this.center.lat + before.lat - after.lat)), lng: ((this.center.lng + dl + 540) % 360) - 180 };
     this.manual = true; this.onManual?.();
   }
   panBy(dx, dy) {
-    this.center = { lat: this.center.lat + dy * this.mpp / M_PER_DEG_LAT, lng: this.center.lng - dx * this.mpp / M_PER_DEG_LNG };
+    const c = this.unproj(this.w / 2 - dx, this.cy - dy);
+    this.center = { lat: Math.max(-84, Math.min(84, c.lat)), lng: c.lng };
     this.manual = true; this.onManual?.();
   }
   initGestures() {
@@ -509,8 +513,22 @@ class MapView {
   }
   // المركز البصري أعلى شوية عشان الـ bottom sheet
   get cy() { return this._cy ?? this.h * 0.36; }
-  proj(p) { return [this.w / 2 + (p.lng - this.center.lng) * M_PER_DEG_LNG / this.mpp, this.cy - (p.lat - this.center.lat) * M_PER_DEG_LAT / this.mpp]; }
-  unproj(x, y) { return { lat: this.center.lat - (y - this.cy) * this.mpp / M_PER_DEG_LAT, lng: this.center.lng + (x - this.w / 2) * this.mpp / M_PER_DEG_LNG }; }
+  // إسقاط ميركاتور (نفس إسقاط خرايط الويب) — بيغطي الكوكب كله
+  // s = بكسل لكل وحدة عالم (العالم كله = ٢٥٦ وحدة)، و mpp = متر لكل بكسل عند مركز الخريطة
+  get mpp() { return 156543.03 * Math.cos(this.center.lat * Math.PI / 180) / this.s; }
+  set mpp(v) { this.s = 156543.03 * Math.cos(this.center.lat * Math.PI / 180) / v; }
+  static wx(lng) { return (lng + 180) / 360 * 256; }
+  static wy(lat) { const r = Math.max(-85.05, Math.min(85.05, lat)) * Math.PI / 180; return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * 256; }
+  proj(p) {
+    let dx = MapView.wx(p.lng) - MapView.wx(this.center.lng);
+    if (dx > 128) dx -= 256; else if (dx < -128) dx += 256;
+    return [this.w / 2 + dx * this.s, this.cy + (MapView.wy(p.lat) - MapView.wy(this.center.lat)) * this.s];
+  }
+  unproj(x, y) {
+    const X = MapView.wx(this.center.lng) + (x - this.w / 2) / this.s, Y = Math.max(0, Math.min(256, MapView.wy(this.center.lat) + (y - this.cy) / this.s));
+    let lng = X / 256 * 360 - 180; lng = ((lng + 540) % 360) - 180;
+    return { lat: Math.atan(Math.sinh(Math.PI * (1 - 2 * Y / 256))) * 180 / Math.PI, lng };
+  }
   visibleCells() {
     const key = this.center.lat.toFixed(3) + "," + this.center.lng.toFixed(3) + "," + this.w + "," + this.mpp.toFixed(1);
     if (this.cellCache.key === key) return this.cellCache.cells;
@@ -548,23 +566,25 @@ class MapView {
   }
   // بلاطات الخريطة الحقيقية
   drawTiles() {
-    const c = this.ctx, lat = this.center.lat;
-    const z = Math.max(3, Math.min(19, Math.round(Math.log2(156543.03 * Math.cos(lat * Math.PI / 180) / this.mpp))));
-    const nw = this.unproj(0, 0), se = this.unproj(this.w, this.h);
-    const x0 = Math.floor(lng2tx(nw.lng, z)), x1 = Math.floor(lng2tx(se.lng, z));
-    const y0 = Math.floor(lat2ty(nw.lat, z)), y1 = Math.floor(lat2ty(se.lat, z));
-    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 80) return false;
+    const c = this.ctx;
+    const z = Math.max(0, Math.min(19, Math.round(Math.log2(this.s))));
+    const n = 2 ** z, t = 256 / n;                    // حجم البلاطة بوحدات العالم
+    const Xc = MapView.wx(this.center.lng), Yc = MapView.wy(this.center.lat);
+    const X0 = Xc - this.w / 2 / this.s, X1 = Xc + this.w / 2 / this.s, Y0 = Yc - this.cy / this.s, Y1 = Yc + (this.h - this.cy) / this.s;
+    const x0 = Math.floor(X0 / t), x1 = Math.floor(X1 / t), y0 = Math.max(0, Math.floor(Y0 / t)), y1 = Math.min(n - 1, Math.floor(Y1 / t));
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 90) return false;
+    c.fillStyle = "#0b0e12"; c.fillRect(0, 0, this.w, this.h);
     let drawn = 0;
-    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
-      const [ax, ay] = this.proj({ lat: ty2lat(y, z), lng: tx2lng(x, z) });
-      const [bx, by] = this.proj({ lat: ty2lat(y + 1, z), lng: tx2lng(x + 1, z) });
-      let t = getTile(z, x, y), sx = 0, sy = 0, sw = 512, sh = 512;
+    for (let xi = x0; xi <= x1; xi++) for (let y = y0; y <= y1; y++) {
+      const x = ((xi % n) + n) % n;
+      const ax = this.w / 2 + (xi * t - Xc) * this.s, ay = this.cy + (y * t - Yc) * this.s, size = t * this.s;
+      let tl = getTile(z, x, y), sx = 0, sy = 0, sw = 512, sh = 512;
       // لسه بيحمّل؟ نستخدم البلاطة الأكبر (زوم أقل) مؤقتاً
-      for (let k = 1; !t.ok && k <= 3 && z - k >= 3; k++) {
+      for (let k = 1; !tl.ok && k <= 4 && z - k >= 0; k++) {
         const p = tiles.get(`${z - k}/${x >> k}/${y >> k}`);
-        if (p && p.ok) { const n = 2 ** k; sw = sh = 512 / n; sx = (x % n) * sw; sy = (y % n) * sh; t = p; }
+        if (p && p.ok) { const m = 2 ** k; sw = sh = 512 / m; sx = (x % m) * sw; sy = (y % m) * sh; tl = p; }
       }
-      if (t.ok) { c.drawImage(t.img, sx, sy, sw, sh, ax, ay, bx - ax + .6, by - ay + .6); drawn++; }
+      if (tl.ok) { c.drawImage(tl.img, sx, sy, sw, sh, ax, ay, size + .6, size + .6); drawn++; }
     }
     return drawn > 0 || tilesOk > 0;
   }
@@ -1185,8 +1205,14 @@ document.getElementById("riderMap").addEventListener("click", (e) => {
   if (rider.map.dragged) { rider.map.dragged = false; return; }
   if (!["home", "choose"].includes(rider.state)) return;
   const r = e.target.getBoundingClientRect();
-  const p = rider.map.unproj(e.clientX - r.left, e.clientY - r.top);
-  setRiderPoint(rider.pickMode, p, placeName(p));
+  const p = rider.map.unproj(e.clientX - r.left, e.clientY - r.top), mode = rider.pickMode, nm = placeName(p);
+  setRiderPoint(mode, p, nm);
+  // اسم الشارع الحقيقي من OpenStreetMap (لو فيه نت)
+  if (!PLACES.some((pl) => pl.name === nm)) reverseName(p).then((real) => {
+    if (!real) return;
+    if (mode === "pickup" && rider.pickup === p) rider.pickName = real; else if (mode === "dropoff" && rider.dropoff === p) rider.dropName = real; else return;
+    if (["home", "choose"].includes(rider.state)) renderRider();
+  });
 });
 const payOf = (id) => PAY_METHODS.find((x) => x.id === id) || PAY_METHODS[0];
 
@@ -1205,7 +1231,7 @@ function riderSearch(q) {
   };
   if (!q.trim()) {
     const recent = pm === "dropoff" ? [...new Map(rider.history.filter((h) => h.status === "completed" && h.dropPoint).map((h) => [h.dropName, h])).values()].slice(0, 3).map((h) => ({ name: h.dropName, sub: "رحت هنا " + timeAgo(h.at), p: h.dropPoint, icon: "🕘" })) : [];
-    const near = PLACES.filter((pl) => dist(pl.p, rider.pickup) > 300).sort((a, b) => dist(a.p, rider.pickup) - dist(b.p, rider.pickup)).slice(0, 6);
+    const near = PLACES.filter((pl) => dist(pl.p, rider.pickup) > 300 && dist(pl.p, rider.pickup) < 60000).sort((a, b) => dist(a.p, rider.pickup) - dist(b.p, rider.pickup)).slice(0, 6);
     list = [...recent, ...near];
     draw(`<div class="muted" style="margin-top:8px">💡 أو دوس على أي حتة في الخريطة</div>`);
     return;
@@ -1296,7 +1322,7 @@ function renderRider() {
       ${pointFields(true)}
       <div class="types">${RIDE_TYPES.map(t => `<div class="type ${t.id === rider.type.id ? "sel" : ""}" data-type="${t.id}"><span class="car">${t.icon}</span><div class="grow"><b>${t.name}</b><div class="muted">${ar(2 + t.eta)} دقايق · ${t.id === "xl" ? "٦ أفراد" : "٤ أفراد"}</div></div><span class="price">${fmtMoney(fareCents(rider.pickup, rider.dropoff, t.mult))}</span></div>`).join("")}</div>
       <div class="field clickable" id="rPay"><span>${pm.icon}</span><span>${pm.name} <span class="muted">${pm.sub}</span></span><span class="muted" style="margin-inline-start:auto">تغيير ›</span></div>
-      <div class="row" style="gap:8px"><button class="btn ghost small" id="rBack" style="width:auto;padding-inline:16px">رجوع</button><button class="btn" id="rReq">اطلب ${rider.type.name}</button></div>`;
+      <div class="row" style="gap:8px"><button class="btn ghost small" id="rBack" style="width:auto;padding-inline:16px">رجوع</button><button class="btn" id="rReq" ${dLen > 400000 ? "disabled" : ""}>${dLen > 400000 ? "المسافة بعيدة أوي للعربية" : "اطلب " + rider.type.name}</button></div>`;
     bindFields();
     sheet.querySelectorAll("[data-type]").forEach(el => el.onclick = () => { rider.type = RIDE_TYPES.find(t => t.id === el.dataset.type); renderRider(); });
     sheet.querySelector("#rPay").onclick = () => { rider.view = "wallet"; renderRiderOverlay(); };
@@ -1653,12 +1679,12 @@ function frame(now) {
   else if ((rider.state === "accepted" || rider.state === "arrived") && liveDrv) focus = [rider.pickup, liveDrv.pos];
   else if (rider.state === "onTrip" && liveDrv) focus = [liveDrv.pos, rider.dropoff];
   if (focus && !rm.manual) {
-    const [a, b] = focus, dx = Math.abs(a.lng - b.lng) * M_PER_DEG_LNG, dy = Math.abs(a.lat - b.lat) * M_PER_DEG_LAT;
+    const [a, b] = focus, dx = dist(a, { lat: a.lat, lng: b.lng }), dy = dist(a, { lat: b.lat, lng: a.lng });
     const sheetTop = rm.h - document.getElementById("riderSheet").offsetHeight;
     const topY = 80, botY = Math.max(topY + 120, sheetTop - 24);
     const cyWant = (topY + botY) / 2;
     rm._cy = rm._cy == null ? cyWant : rm._cy + (cyWant - rm._cy) * .15;
-    wantMpp = Math.max(9, Math.min(90, Math.max(dx / (rm.w * 0.78), dy / ((botY - topY) * 0.85))));
+    wantMpp = Math.max(9, Math.min(60000, Math.max(dx / (rm.w * 0.78), dy / ((botY - topY) * 0.85))));
     const mid = { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 };
     rm.center = { lat: rm.center.lat + (mid.lat - rm.center.lat) * .12, lng: rm.center.lng + (mid.lng - rm.center.lng) * .12 };
   }
