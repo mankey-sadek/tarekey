@@ -36,6 +36,8 @@
   .zoom button+button{border-top:1px solid var(--line)}
   .zoom button:active{background:rgba(255,255,255,.08)}
   .zoom .rc{font-size:17px;color:var(--blue)}
+  .attrib{position:absolute;left:12px;top:238px;z-index:9;font-size:9.5px;color:rgba(203,213,225,.55);direction:ltr;pointer-events:none;display:none}
+  .attrib.on{display:block}
   .zoom .rc[hidden]{display:none}
   .statusbar{position:absolute;top:0;inset-inline:0;height:40px;display:flex;justify-content:space-between;align-items:center;padding:0 26px;font-size:12px;font-weight:700;z-index:15;pointer-events:none}
   .topbar{position:absolute;top:46px;inset-inline:12px;z-index:10;display:flex;gap:8px;align-items:center}
@@ -413,6 +415,27 @@ const NILE = (() => {
   return pts;
 })();
 
+// ===== خريطة حقيقية (OpenStreetMap عن طريق CARTO) — ولو مفيش نت بنرجع للخريطة المرسومة =====
+const TILE_URL = (z, x, y) => `https://${"abcd"[(x + y) % 4]}.basemaps.cartocdn.com/dark_all/${z}/${x}/${y}@2x.png`;
+const tiles = new Map();          // "z/x/y" -> { img, ok }
+let tilesOk = 0, tilesFail = 0;   // لو كله فشل، بنستخدم الخريطة المرسومة
+const lng2tx = (lng, z) => (lng + 180) / 360 * 2 ** z;
+const lat2ty = (lat, z) => { const r = lat * Math.PI / 180; return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * 2 ** z; };
+const tx2lng = (x, z) => x / 2 ** z * 360 - 180;
+const ty2lat = (y, z) => { const n = Math.PI - 2 * Math.PI * y / 2 ** z; return 180 / Math.PI * Math.atan(Math.sinh(n)); };
+function getTile(z, x, y) {
+  const k = `${z}/${x}/${y}`; let t = tiles.get(k);
+  if (!t) {
+    t = { img: new Image(), ok: false }; t.img.crossOrigin = "anonymous";
+    t.img.onload = () => { t.ok = true; tilesOk++; };
+    t.img.onerror = () => { tilesFail++; tiles.delete(k); t.dead = true; };
+    t.img.src = TILE_URL(z, x, y); tiles.set(k, t);
+    if (tiles.size > 400) for (const key of [...tiles.keys()].slice(0, 100)) tiles.delete(key);
+  }
+  return t;
+}
+const realMap = () => tilesOk > 0 || tilesFail < 6;
+
 class MapView {
   constructor(canvas, center, mpp) {
     this.cv = canvas; this.ctx = canvas.getContext("2d");
@@ -465,6 +488,8 @@ class MapView {
     this.onManual = () => { rc.hidden = false; };
     this.resetManual = () => { this.manual = false; rc.hidden = true; };
     cv.parentElement.appendChild(box);
+    const at = document.createElement("div"); at.className = "attrib"; at.innerHTML = "© OpenStreetMap · © CARTO";
+    cv.parentElement.appendChild(at); this.attribEl = at;
   }
   resize() {
     const r = this.cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
@@ -489,18 +514,49 @@ class MapView {
   drawBase(highlight /* Map cell -> color */) {
     const c = this.ctx;
     c.fillStyle = "#151a21"; c.fillRect(0, 0, this.w, this.h);
+    this.real = realMap() && this.drawTiles();
+    if (this.attribEl && this.attribEl.classList.contains("on") !== !!this.real) this.attribEl.classList.toggle("on", !!this.real);
+    if (this.real) { this.drawCells(highlight, .05); return; }
     // النيل
     c.lineCap = "round"; c.lineJoin = "round";
     this.path(NILE); c.strokeStyle = "#16304a"; c.lineWidth = 260 / this.mpp; c.stroke();
     // الشوارع
     for (const r of roadsNear(this)) { if (this.mpp > 25 && r.w < 10) continue; this.path(r.pts); c.strokeStyle = r.w > 10 ? "#2b3340" : "#222933"; c.lineWidth = r.w / this.mpp * 2.2; c.stroke(); }
-    // شبكة H3
+    this.drawCells(highlight, .09);
+    this.drawLabels();
+  }
+  // شبكة H3
+  drawCells(highlight, alpha) {
+    const c = this.ctx;
     for (const cell of this.mpp > 22 ? [] : this.visibleCells()) {
-      this.path(cell.boundary); c.closePath();
       const hl = highlight && highlight.get(cell.id);
+      if (!hl && alpha < .06 && this.mpp > 14) continue;
+      this.path(cell.boundary); c.closePath();
       if (hl) { c.fillStyle = hl; c.fill(); }
-      c.strokeStyle = hl ? "rgba(168,85,247,.55)" : "rgba(148,163,184,.09)"; c.lineWidth = 1; c.stroke();
+      c.strokeStyle = hl ? "rgba(168,85,247,.55)" : `rgba(148,163,184,${alpha})`; c.lineWidth = 1; c.stroke();
     }
+  }
+  // بلاطات الخريطة الحقيقية
+  drawTiles() {
+    const c = this.ctx, lat = this.center.lat;
+    const z = Math.max(3, Math.min(19, Math.round(Math.log2(156543.03 * Math.cos(lat * Math.PI / 180) / this.mpp))));
+    const nw = this.unproj(0, 0), se = this.unproj(this.w, this.h);
+    const x0 = Math.floor(lng2tx(nw.lng, z)), x1 = Math.floor(lng2tx(se.lng, z));
+    const y0 = Math.floor(lat2ty(nw.lat, z)), y1 = Math.floor(lat2ty(se.lat, z));
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 80) return false;
+    let drawn = 0;
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
+      const [ax, ay] = this.proj({ lat: ty2lat(y, z), lng: tx2lng(x, z) });
+      const [bx, by] = this.proj({ lat: ty2lat(y + 1, z), lng: tx2lng(x + 1, z) });
+      let t = getTile(z, x, y), sx = 0, sy = 0, sw = 512, sh = 512;
+      // لسه بيحمّل؟ نستخدم البلاطة الأكبر (زوم أقل) مؤقتاً
+      for (let k = 1; !t.ok && k <= 3 && z - k >= 3; k++) {
+        const p = tiles.get(`${z - k}/${x >> k}/${y >> k}`);
+        if (p && p.ok) { const n = 2 ** k; sw = sh = 512 / n; sx = (x % n) * sw; sy = (y % n) * sh; t = p; }
+      }
+      if (t.ok) { c.drawImage(t.img, sx, sy, sw, sh, ax, ay, bx - ax + .6, by - ay + .6); drawn++; }
+    }
+    return drawn > 0 || tilesOk > 0;
   }
   car(p, heading, color, label, glow) {
     const c = this.ctx, [x, y] = this.proj(p);
@@ -513,6 +569,47 @@ class MapView {
     c.fillStyle = "rgba(15,23,42,.75)"; roundRect(c, -4.5, -6, 9, 5, 1.5); c.fill();
     c.restore();
     if (label) { c.font = "700 11px Cairo"; c.fillStyle = "#e2e8f0"; c.textAlign = "center"; c.fillText(label, x, y - 16); }
+  }
+  // أسامي الأماكن على الخريطة (من غير ما تركب على بعض)
+  drawLabels() {
+    if (this.real) return;
+    const c = this.ctx, boxes = [];
+    const fits = (b) => !boxes.some((o) => b.x < o.x + o.w && b.x + b.w > o.x && b.y < o.y + o.h && b.y + b.h > o.y);
+    c.save(); c.direction = "rtl"; c.textAlign = "center"; c.textBaseline = "middle"; c.lineJoin = "round";
+    // النيل
+    if (this.mpp < 60) {
+      const mid = NILE[Math.round(NILE.length / 2 + (this.center.lat - CENTER.lat) * M_PER_DEG_LAT / 250)] || NILE[0];
+      const [nx, ny] = this.proj({ lat: this.center.lat + (this.cy - this.h * 0.18) * this.mpp / M_PER_DEG_LAT, lng: mid.lng });
+      if (nx > 20 && nx < this.w - 20) { c.font = "italic 600 12px Cairo"; c.fillStyle = "#4f7fae"; c.fillText("نهر النيل", nx, ny); boxes.push({ x: nx - 30, y: ny - 9, w: 60, h: 18 }); }
+    }
+    const big = this.mpp > 30, size = this.mpp < 6 ? 13.5 : 12;
+    for (const pl of PLACES) {
+      const [x, y] = this.proj(pl.p);
+      if (x < -40 || y < -20 || x > this.w + 40 || y > this.h + 20) continue;
+      c.font = `700 ${size}px Cairo`;
+      const tw = c.measureText(pl.name).width, b = { x: x - tw / 2 - 4, y: y - 22, w: tw + 8, h: 30 };
+      if (!fits(b)) continue;
+      if (big && pl.minor) continue;
+      boxes.push(b);
+      c.beginPath(); c.arc(x, y, 3, 0, 7); c.fillStyle = "#94a3b8"; c.fill();
+      c.lineWidth = 4; c.strokeStyle = "rgba(14,17,22,.9)"; c.strokeText(pl.name, x, y - 12);
+      c.fillStyle = "#cbd5e1"; c.fillText(pl.name, x, y - 12);
+    }
+    c.restore();
+  }
+  // اسم المكان فوق علامة الركوب/الوجهة
+  pinLabel(p, text, color = "#22c55e") {
+    if (!text) return;
+    const c = this.ctx, [x, y] = this.proj(p);
+    if (x < -60 || y < -40 || x > this.w + 60 || y > this.h + 40) return;
+    c.save(); c.direction = "rtl"; c.font = "700 12.5px Cairo"; c.textAlign = "center"; c.textBaseline = "middle";
+    const t = text.length > 26 ? text.slice(0, 25) + "…" : text, tw = c.measureText(t).width + 18;
+    const bx = Math.max(4, Math.min(this.w - tw - 4, x - tw / 2)), by = y - 46;
+    c.fillStyle = "rgba(14,17,22,.94)"; c.strokeStyle = color; c.lineWidth = 1.5;
+    roundRect(c, bx, by, tw, 26, 13); c.fill(); c.stroke();
+    c.beginPath(); c.moveTo(x - 5, by + 26); c.lineTo(x + 5, by + 26); c.lineTo(x, by + 32); c.closePath(); c.fillStyle = color; c.fill();
+    c.fillStyle = "#f1f5f9"; c.fillText(t, bx + tw / 2, by + 13.5);
+    c.restore();
   }
   pin(p, color, square) {
     const c = this.ctx, [x, y] = this.proj(p);
@@ -1500,7 +1597,7 @@ function frame(now) {
     if (age < 6) ls.rings.forEach((ring, k) => { if (age * 4 > k) ring.forEach(c => hl.set(c, `rgba(168,85,247,${Math.max(0, .28 - k * .05) * (1 - age / 6)})`)); });
   }
   rm.drawBase(hl);
-  if (rider.dropoff) { rm.line(rider.pickup, rider.dropoff, "rgba(255,255,255,.35)", true); rm.pin(rider.dropoff, "#e2e8f0", true); }
+  if (rider.dropoff) { rm.line(rider.pickup, rider.dropoff, "rgba(255,255,255,.35)", true); rm.pin(rider.dropoff, "#e2e8f0", true); rm.pinLabel(rider.dropoff, rider.dropName, "#e2e8f0"); }
   for (const d of server.drivers.values()) {
     const mine = rider.driver && d.id === rider.driver.id;
     if (rider.driver && !mine && rider.state !== "home") continue;
@@ -1508,7 +1605,7 @@ function frame(now) {
     rm.car(d.pos, h, mine ? "#22c55e" : d.status === "busy" ? "#64748b" : "#e2e8f0", mine ? d.name : null, mine ? "rgba(34,197,94,.2)" : null);
   }
   if (rider.state === "searching") rm.circle(rider.pickup, 300 + ((now / 4) % 900), "rgba(34,197,94,.5)");
-  if (!["onTrip", "rate"].includes(rider.state)) rm.pin(rider.pickup, "#22c55e");
+  if (!["onTrip", "rate"].includes(rider.state)) { rm.pin(rider.pickup, "#22c55e"); rm.pinLabel(rider.pickup, rider.pickName); }
   // الكاميرا: بتجمع النقط المهمة في الجزء اللي باين من الخريطة فوق الـ sheet
   // (لو إنت حركت أو عملت زوم بإيدك، بتسيبك لحد ما الحالة تتغير أو تدوس ◎)
   if (rm.lastState !== rider.state || rm.lastPick !== rider.pickup || rm.lastDrop !== rider.dropoff) { rm.resetManual(); rm.lastState = rider.state; rm.lastPick = rider.pickup; rm.lastDrop = rider.dropoff; }
@@ -1540,9 +1637,9 @@ function frame(now) {
   if (me.trip && me.state !== "idle") {
     const tgt = me.state === "toPickup" || me.state === "atPickup" ? me.trip.pickup : me.trip.dropoff;
     dm.line(me.pos, tgt, "#3b82f6");
-    dm.pin(me.trip.pickup, "#22c55e");
-    dm.pin(me.trip.dropoff, "#e2e8f0", true);
-  } else if (me.state === "offer") { dm.line(me.pos, me.offer.trip.pickup, "rgba(34,197,94,.7)", true); dm.pin(me.offer.trip.pickup, "#22c55e"); }
+    dm.pin(me.trip.pickup, "#22c55e"); dm.pin(me.trip.dropoff, "#e2e8f0", true);
+    if (me.state === "toPickup" || me.state === "atPickup") dm.pinLabel(me.trip.pickup, me.trip.pickupName); else dm.pinLabel(me.trip.dropoff, me.trip.dropoffName, "#e2e8f0");
+  } else if (me.state === "offer") { dm.line(me.pos, me.offer.trip.pickup, "rgba(34,197,94,.7)", true); dm.pin(me.offer.trip.pickup, "#22c55e"); dm.pinLabel(me.offer.trip.pickup, me.offer.trip.pickupName); }
   dm.car(me.pos, me.heading, me.online ? "#22c55e" : "#94a3b8", null, me.online ? "rgba(34,197,94,.25)" : null);
 
   // تحديث النصوص كل ٥٠٠ms (المسافة/الوقت المتبقي)
