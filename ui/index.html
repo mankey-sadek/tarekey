@@ -137,6 +137,8 @@
   .bars-l{display:flex;gap:6px;direction:ltr;font-size:10.5px;color:var(--muted)}
   .bars-l span{flex:1;text-align:center}
   .pill.btnish{cursor:pointer}
+  .navbar{display:flex;align-items:center;gap:12px;background:#1d4ed8;color:#fff;border-radius:14px;padding:10px 14px;margin:2px 0 8px}
+  .navbar .ti{font-size:26px} .navbar b{font-size:17px} .navbar div div{font-size:13px;opacity:.92}
   .search{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:0 12px;margin:2px 0 4px}
   .search:focus-within{border-color:var(--accent)}
   .search input{flex:1;background:none;border:0;outline:none;color:var(--text);font-family:inherit;font-size:15px;padding:12px 0}
@@ -295,6 +297,57 @@ function moveToward(p, target, meters) {
   const t = meters / d;
   return { lat: p.lat + (target.lat - p.lat) * t, lng: p.lng + (target.lng - p.lng) * t };
 }
+// ===== أقصر طريق على الشوارع (OSRM على بيانات OpenStreetMap — من غير مفتاح) =====
+const routeCache = new Map();
+function fetchRoute(a, b) {
+  const k = [a.lat, a.lng, b.lat, b.lng].map((v) => v.toFixed(4)).join(",");
+  if (!routeCache.has(k)) routeCache.set(k, (async () => {
+    try {
+      const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson&steps=true`);
+      const j = await r.json(); const rt = j.routes && j.routes[0]; if (!rt) return null;
+      const pts = rt.geometry.coordinates.map(([lng, lat]) => ({ lat, lng }));
+      const steps = rt.legs[0].steps.map((st) => {
+        const [lng, lat] = st.maneuver.location, at = { lat, lng };
+        let idx = 0, best = Infinity; pts.forEach((p, i) => { const d = dist(p, at); if (d < best) { best = d; idx = i; } });
+        return { idx, type: st.maneuver.type, mod: st.maneuver.modifier, name: st.name };
+      });
+      return { pts, dist: rt.distance, dur: rt.duration, steps };
+    } catch { return null; }
+  })());
+  return routeCache.get(k);
+}
+const TURN_AR = { left: "لف شمال", right: "لف يمين", "slight left": "خد شمال خفيف", "slight right": "خد يمين خفيف", "sharp left": "لف شمال جامد", "sharp right": "لف يمين جامد", straight: "كمّل على طول", uturn: "اعمل يو تيرن" };
+// بيمشي العربية على الطريق نقطة نقطة، ولو الطريق لسه مجاش (أو مفيش نت) بيمشي في خط مستقيم
+class RouteFollower {
+  constructor(from, target, onReady) { this.target = target; this.route = null; this.i = 0; fetchRoute(from, target).then((r) => { this.route = r; if (r) onReady?.(r); }); }
+  step(pos, meters) {
+    const pts = this.route?.pts;
+    while (pts && meters > 0 && this.i < pts.length) {
+      const d = dist(pos, pts[this.i]);
+      if (d <= meters) { pos = { ...pts[this.i] }; meters -= d; this.i++; } else { pos = moveToward(pos, pts[this.i], meters); meters = 0; }
+    }
+    return meters > 0 ? moveToward(pos, this.target, meters) : pos;
+  }
+  // للعرض بس (عند الزبون): بنتقدم على الطريق مع مكان العربية
+  track(pos) { const pts = this.route?.pts; if (!pts) return; while (this.i < pts.length - 1 && dist(pos, pts[this.i + 1]) < dist(pos, pts[this.i]) + 5) this.i++; }
+  rest(pos) { return this.route ? [pos, ...this.route.pts.slice(this.i), this.target] : null; }
+  remaining(pos) {
+    if (!this.route) return dist(pos, this.target);
+    const pts = this.route.pts; let m = this.i < pts.length ? dist(pos, pts[this.i]) : dist(pos, this.target);
+    for (let k = this.i; k < pts.length - 1; k++) m += dist(pts[k], pts[k + 1]);
+    return m;
+  }
+  eta(pos) { const r = this.route; return r ? Math.max(1, Math.round(r.dur * this.remaining(pos) / Math.max(1, r.dist) / 60)) : null; }
+  next(pos) {
+    const r = this.route; if (!r) return null;
+    const st = r.steps.find((x) => x.idx >= this.i && x.type !== "depart"); if (!st) return null;
+    let m = this.i < r.pts.length ? dist(pos, r.pts[this.i]) : 0;
+    for (let k = this.i; k < st.idx; k++) m += dist(r.pts[k], r.pts[k + 1]);
+    const what = st.type === "arrive" ? "هتوصل" : st.type === "roundabout" || st.type === "rotary" ? "ادخل الدوران" : TURN_AR[st.mod] || "كمّل";
+    return { text: what + (st.name && st.type !== "arrive" ? ` في ${st.name}` : ""), m: Math.round(m / 10) * 10, mod: st.mod, type: st.type };
+  }
+}
+const turnIcon = (n) => !n ? "⬆️" : n.type === "arrive" ? "🏁" : /left/.test(n.mod || "") ? "⬅️" : /right/.test(n.mod || "") ? "➡️" : n.mod === "uturn" ? "↩️" : "⬆️";
 function bearing(a, b) { return Math.atan2((b.lng - a.lng) * Math.cos(a.lat * Math.PI / 180), b.lat - a.lat); }
 function rand(a, b) { return a + Math.random() * (b - a); }
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
@@ -661,6 +714,11 @@ class MapView {
     c.fillStyle = color; c.strokeStyle = "#fff"; c.lineWidth = 3;
     if (square) { c.fillRect(x - 7, y - 7, 14, 14); c.strokeRect(x - 7, y - 7, 14, 14); }
     else { c.beginPath(); c.arc(x, y, 7, 0, 7); c.fill(); c.stroke(); }
+  }
+  route(pts, color) {
+    const c = this.ctx; this.path(pts); c.lineCap = c.lineJoin = "round";
+    c.strokeStyle = this.real ? "#ffffff" : "#0b0e12"; c.lineWidth = 9; c.stroke();
+    this.path(pts); c.strokeStyle = color; c.lineWidth = 5.5; c.stroke();
   }
   line(a, b, color, dashed) {
     const c = this.ctx; this.path([a, b]); c.strokeStyle = this.col(color); c.lineWidth = 4; c.setLineDash(dashed ? [8, 8] : []); c.stroke(); c.setLineDash([]);
@@ -1138,18 +1196,18 @@ class SimDriver {
       if (this.pendingOffer === m.tripId) { this.pendingOffer = null; clearTimeout(this.offerT); }
     } else if (m.type === "trip_update") {
       const t = m.trip;
-      if (t.status === "accepted") { this.trip = t; this.phase = "toPickup"; this.target = t.pickup; }
-      if (t.status === "cancelled" || t.status === "completed") { this.trip = null; this.phase = "cruise"; this.newTarget(); }
+      if (t.status === "accepted") { this.trip = t; this.phase = "toPickup"; this.target = t.pickup; this.nav = new RouteFollower(this.pos, t.pickup); }
+      if (t.status === "cancelled" || t.status === "completed") { this.trip = null; this.phase = "cruise"; this.nav = null; this.newTarget(); }
     }
   }
   step(dt) {
     const speed = (this.phase === "cruise" ? 7 : 11) * SIM_SPEED;
     const prev = this.pos;
-    this.pos = moveToward(this.pos, this.target, speed * dt);
+    this.pos = this.nav && this.phase !== "cruise" && this.phase !== "wait" ? this.nav.step(this.pos, speed * dt) : moveToward(this.pos, this.target, speed * dt);
     if (dist(prev, this.pos) > 0.5) this.heading = bearing(prev, this.pos);
     if (dist(this.pos, this.target) < 1) {
       if (this.phase === "cruise") this.newTarget();
-      else if (this.phase === "toPickup") { this.phase = "wait"; server.transition(this.trip.id, "arrive", this.id); setTimeout(() => { if (this.trip && server.transition(this.trip.id, "start", this.id)) { this.phase = "toDrop"; this.target = this.trip.dropoff; } }, 3500); }
+      else if (this.phase === "toPickup") { this.phase = "wait"; server.transition(this.trip.id, "arrive", this.id); setTimeout(() => { if (this.trip && server.transition(this.trip.id, "start", this.id)) { this.phase = "toDrop"; this.target = this.trip.dropoff; this.nav = new RouteFollower(this.pos, this.trip.dropoff); } }, 3500); }
       else if (this.phase === "toDrop") { this.phase = "wait"; server.complete(this.trip.id, this.id); }
     }
   }
@@ -1309,7 +1367,7 @@ function renderRider() {
   const driverCard = (d) => d ? `<div class="driver-card"><div class="avatar">${esc(d.name[0])}</div><div style="flex:1"><b>${esc(d.name)}</b> <span class="muted">★ ${d.rating.toFixed(2)}</span><div class="muted">${esc(d.car)}</div></div><span class="plate">${esc(d.plate)}</span></div>` : "";
   const pointFields = (clickable) => `
       <div class="field ${clickable ? "clickable" : ""} ${clickable && rider.pickMode === "pickup" ? "active" : ""}" data-mode="pickup"><span class="ic" style="background:var(--accent)"></span><span>${esc(rider.pickName)}</span>${clickable ? `<span class="muted" style="margin-inline-start:auto">تغيير</span>` : ""}</div>
-      <div class="field ${clickable ? "clickable" : ""} ${clickable && rider.pickMode === "dropoff" ? "active" : ""}" data-mode="dropoff"${rider.dropoff ? "" : ' style="color:var(--muted)"'}><span class="ic sq" style="background:#fff"></span><span>${rider.dropoff ? esc(rider.dropName) : "رايح فين؟ دوس على الخريطة أو اختار"}</span>${rider.dropoff ? `<span class="muted" style="margin-inline-start:auto">${(dLen / 1000).toFixed(1)} كم</span>` : ""}</div>`;
+      <div class="field ${clickable ? "clickable" : ""} ${clickable && rider.pickMode === "dropoff" ? "active" : ""}" data-mode="dropoff"${rider.dropoff ? "" : ' style="color:var(--muted)"'}><span class="ic sq" style="background:#fff"></span><span>${rider.dropoff ? esc(rider.dropName) : "رايح فين؟ دوس على الخريطة أو اختار"}</span>${rider.dropoff ? `<span class="muted" style="margin-inline-start:auto">${rider.nav?.route && rider.state === "choose" ? `🛣 ${(rider.nav.route.dist / 1000).toFixed(1)} كم · ${ar(Math.max(1, Math.round(rider.nav.route.dur / 60)))} د` : (dLen / 1000).toFixed(1) + " كم"}</span>` : ""}</div>`;
   const bindFields = () => sheet.querySelectorAll("[data-mode]").forEach((f) => f.onclick = () => { rider.pickMode = f.dataset.mode; rider.state = "home"; renderRider(); });
 
   if (s === "home") {
@@ -1351,7 +1409,7 @@ function renderRider() {
     sheet.querySelector("#rCancel").onclick = riderCancel;
   } else if (s === "accepted" || s === "arrived") {
     const d = rider.driver, live = d && server.drivers.get(d.id);
-    const eta = live ? Math.max(1, Math.round(dist(live.pos, rider.pickup) / (11 * SIM_SPEED) / 6)) : 0;
+    const eta = rider.nav?.route && live ? rider.nav.eta(live.pos) : live ? Math.max(1, Math.round(dist(live.pos, rider.pickup) / (11 * SIM_SPEED) / 6)) : 0;
     sheet.innerHTML = `<div class="grab"></div>
       <h3>${s === "arrived" ? "الكابتن وصل ومستنيك 📍" : `الكابتن جاي في خلال ${ar(eta)} دقيقة`}</h3>
       ${stepsBar(s === "arrived" ? 2 : 1)}
@@ -1466,6 +1524,13 @@ Object.defineProperty(me, "tripsToday", { get: () => todayTrips().length });
 server.clients.drivers.set(me.id, (m) => meOnMsg(m));
 let meTimer = null;
 
+// الطريق الحالي للكابتن (لنقطة الركوب أو للوجهة) — بيتحسب مرة واحدة لكل مرحلة
+function meNav() {
+  if (!me.trip) return null;
+  const leg = me.state === "toPickup" || me.state === "atPickup" ? "pickup" : "drop", tgt = leg === "pickup" ? me.trip.pickup : me.trip.dropoff;
+  if (!me.nav || me.nav.leg !== leg || me.nav.tripId !== me.trip.id) { me.nav = new RouteFollower(me.pos, tgt); me.nav.leg = leg; me.nav.tripId = me.trip.id; }
+  return me.nav;
+}
 function goOnline(on) {
   me.online = on;
   if (on) {
@@ -1562,8 +1627,10 @@ function renderDriver() {
       atDrop: `<button class="btn" id="dAct">إنهاء الرحلة</button>`,
     };
     const rn = t.riderName || "الزبون";
+    const nav = meNav(), rem = nav.remaining(me.pos), eta = nav.eta(me.pos), nx = left > 40 && (s === "toPickup" || s === "onTrip") ? nav.next(me.pos) : null;
     sheet.innerHTML = `<div class="grab"></div>${banner}<h3>${titles[s]}</h3>
-      <div class="kv"><div><span class="muted">المسافة</span><b>${left < 40 ? "وصلت" : (left / 1000).toFixed(2) + " كم"}</b></div><div><span class="muted">الأجرة</span><b>${fmtMoney(t.fare)}</b></div></div>
+      ${nx ? `<div class="navbar"><span class="ti">${turnIcon(nx)}</span><div><b>${nx.m > 0 ? `بعد ${ar(nx.m)} م` : "دلوقتي"}</b><div>${esc(nx.text)}</div></div></div>` : ""}
+      <div class="kv"><div><span class="muted">${nav.route ? "أقصر طريق" : "المسافة"}</span><b>${left < 40 ? "وصلت" : (rem / 1000).toFixed(1) + " كم"}${eta && left >= 40 ? ` · ${ar(eta)} د` : ""}</b></div><div><span class="muted">الأجرة</span><b>${fmtMoney(t.fare)}</b></div></div>
       <div class="driver-card"><div class="avatar">${esc(rn[0])}</div><div style="flex:1"><b>${esc(rn)}</b><div class="muted">${toPick ? "📍 " + esc(t.pickupName || "نقطة الركوب") : "🏁 " + esc(t.dropoffName || "الوجهة")}</div></div><span>📞</span></div>
       ${btns[s]}
       ${toPick ? `<div style="height:6px"></div><button class="btn danger small" id="dCancel">إلغاء</button>` : ""}`;
@@ -1652,7 +1719,7 @@ function frame(now) {
   // حركة الكابتن (إنت)
   if (me.online && me.trip && (me.state === "toPickup" || me.state === "onTrip")) {
     const tgt = me.state === "toPickup" ? me.trip.pickup : me.trip.dropoff, prev = me.pos;
-    me.pos = moveToward(me.pos, tgt, 11 * SIM_SPEED * dt);
+    me.pos = meNav().step(me.pos, 11 * SIM_SPEED * dt);
     if (dist(prev, me.pos) > 0.3) me.heading = bearing(prev, me.pos);
   }
 
@@ -1665,7 +1732,16 @@ function frame(now) {
     if (age < 6) ls.rings.forEach((ring, k) => { if (age * 4 > k) ring.forEach(c => hl.set(c, `rgba(168,85,247,${Math.max(0, .28 - k * .05) * (1 - age / 6)})`)); });
   }
   rm.drawBase(hl);
-  if (rider.dropoff) { rm.line(rider.pickup, rider.dropoff, "rgba(255,255,255,.35)", true); rm.pin(rider.dropoff, "#e2e8f0", true); rm.pinLabel(rider.dropoff, rider.dropName, "#e2e8f0"); }
+  // الطريق اللي الكابتن ماشي فيه (أو الطريق المتوقع قبل ما تطلب)
+  const rLiveDrv = rider.driver && server.drivers.get(rider.driver.id);
+  const rLeg = ["accepted", "arrived"].includes(rider.state) ? "pickup" : rider.state === "onTrip" ? "drop" : ["choose", "searching"].includes(rider.state) && rider.dropoff ? "preview" : null;
+  if (rLeg) {
+    const from = rLeg === "preview" ? rider.pickup : rLiveDrv?.pos, to = rLeg === "pickup" ? rider.pickup : rider.dropoff;
+    const key = rLeg + (rider.trip?.id || "") + to.lat + to.lng + (rLeg === "preview" ? rider.pickup.lat + rider.pickup.lng : "");
+    if (from && (!rider.nav || rider.nav.key !== key)) { rider.nav = new RouteFollower(from, to, () => { if (rLeg === "preview" && rider.state === "choose") renderRider(); }); rider.nav.key = key; }
+    if (rider.nav && from) { rider.nav.track(from); const rest = rider.nav.rest(from); if (rest) rm.route(rest, rLeg === "preview" ? "#16a34a" : "#3b82f6"); }
+  } else rider.nav = null;
+  if (rider.dropoff) { if (!rider.nav?.route || rLeg === "pickup") rm.line(rider.pickup, rider.dropoff, "rgba(255,255,255,.35)", true); rm.pin(rider.dropoff, "#e2e8f0", true); rm.pinLabel(rider.dropoff, rider.dropName, "#e2e8f0"); }
   for (const d of server.drivers.values()) {
     const mine = rider.driver && d.id === rider.driver.id;
     if (rider.driver && !mine && rider.state !== "home") continue;
@@ -1700,12 +1776,22 @@ function frame(now) {
   // ===== خريطة الكابتن =====
   const dm = me.map;
   if (dm.lastState !== me.state) { dm.resetManual(); dm.lastState = me.state; }
-  if (!dm.manual) { dm.center = { ...me.pos }; dm.mpp += (7 - dm.mpp) * .15; }
+  if (!dm.manual) {
+    let want = 7;
+    if (me.trip && (me.state === "toPickup" || me.state === "onTrip")) {
+      const tgt = me.state === "toPickup" ? me.trip.pickup : me.trip.dropoff;
+      want = Math.max(4, Math.min(60, dist(me.pos, tgt) * 1.25 / Math.min(dm.w, dm.h * 0.5)));
+      const mid = { lat: (me.pos.lat + tgt.lat) / 2, lng: (me.pos.lng + tgt.lng) / 2 };
+      dm.center = { lat: dm.center.lat + (mid.lat - dm.center.lat) * .1, lng: dm.center.lng + (mid.lng - dm.center.lng) * .1 };
+    } else dm.center = { ...me.pos };
+    dm.mpp += (want - dm.mpp) * .1;
+  }
   dm.drawBase(new Map(me.online ? [[h3.latLngToCell(me.pos.lat, me.pos.lng, RES), "rgba(34,197,94,.12)"]] : []));
   for (const s of (LIVE ? [...server.drivers.values()].filter(d => d.id !== me.id) : sims)) dm.car(s.pos, s.heading || 0, "#475569");
   if (me.trip && me.state !== "idle") {
     const tgt = me.state === "toPickup" || me.state === "atPickup" ? me.trip.pickup : me.trip.dropoff;
-    dm.line(me.pos, tgt, "#3b82f6");
+    const rest = (me.state === "toPickup" || me.state === "onTrip") && meNav()?.rest(me.pos);
+    if (rest) dm.route(rest, "#3b82f6"); else dm.line(me.pos, tgt, "#3b82f6", !rest && (me.state === "toPickup" || me.state === "onTrip"));
     dm.pin(me.trip.pickup, "#22c55e"); dm.pin(me.trip.dropoff, "#e2e8f0", true);
     if (me.state === "toPickup" || me.state === "atPickup") dm.pinLabel(me.trip.pickup, me.trip.pickupName); else dm.pinLabel(me.trip.dropoff, me.trip.dropoffName, "#e2e8f0");
   } else if (me.state === "offer") { dm.line(me.pos, me.offer.trip.pickup, "rgba(34,197,94,.7)", true); dm.pin(me.offer.trip.pickup, "#22c55e"); dm.pinLabel(me.offer.trip.pickup, me.offer.trip.pickupName); }
