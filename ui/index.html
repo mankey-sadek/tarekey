@@ -129,6 +129,12 @@
   .bars-l{display:flex;gap:6px;direction:ltr;font-size:10.5px;color:var(--muted)}
   .bars-l span{flex:1;text-align:center}
   .pill.btnish{cursor:pointer}
+  .search{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:0 12px;margin:2px 0 4px}
+  .search:focus-within{border-color:var(--accent)}
+  .search input{flex:1;background:none;border:0;outline:none;color:var(--text);font-family:inherit;font-size:15px;padding:12px 0}
+  .lrow.pick{cursor:pointer;padding:10px 2px}
+  .lrow.pick:hover{background:rgba(255,255,255,.03)}
+  .gps-ic{color:var(--blue);font-size:18px;font-weight:800}
   .toast{position:absolute;top:92px;inset-inline:14px;z-index:30;background:#0b0f14;border:1px solid var(--line);border-radius:14px;padding:10px 12px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);animation:drop .3s ease-out}
   .toast b{display:block;font-size:14px}
   @keyframes drop{from{transform:translateY(-16px);opacity:0}}
@@ -284,15 +290,53 @@ function bearing(a, b) { return Math.atan2((b.lng - a.lng) * M_PER_DEG_LNG, (b.l
 function rand(a, b) { return a + Math.random() * (b - a); }
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
+// أماكن حقيقية في القاهرة والجيزة (للبحث السريع من غير نت + أسماء النقط على الخريطة)
 const PLACES = [
-  { name: "ميدان التحرير", p: offset(CENTER, 0, 0) },
-  { name: "الزمالك", p: offset(CENTER, -1400, 1900) },
-  { name: "جاردن سيتي", p: offset(CENTER, 300, -1300) },
-  { name: "وسط البلد", p: offset(CENTER, 1300, 900) },
-  { name: "الدقي", p: offset(CENTER, -2300, -200) },
-  { name: "رمسيس", p: offset(CENTER, 1500, 2600) },
-  { name: "المنيل", p: offset(CENTER, -300, -2600) },
-];
+  ["ميدان التحرير", "وسط البلد", 30.0444, 31.2357], ["الزمالك", "القاهرة", 30.0609, 31.2194],
+  ["جاردن سيتي", "القاهرة", 30.0368, 31.2318], ["وسط البلد", "شارع طلعت حرب", 30.0500, 31.2400],
+  ["الدقي", "الجيزة", 30.0384, 31.2109], ["رمسيس", "محطة مصر", 30.0626, 31.2468],
+  ["المنيل", "القاهرة", 30.0228, 31.2290], ["المهندسين", "الجيزة", 30.0566, 31.2003],
+  ["العجوزة", "الجيزة", 30.0560, 31.2120], ["برج القاهرة", "الزمالك", 30.0459, 31.2243],
+  ["دار الأوبرا", "الزمالك", 30.0425, 31.2243], ["المتحف المصري", "التحرير", 30.0478, 31.2336],
+  ["خان الخليلي", "الحسين", 30.0477, 31.2622], ["حديقة الأزهر", "الدراسة", 30.0410, 31.2645],
+  ["القلعة", "صلاح سالم", 30.0287, 31.2599], ["السيدة زينب", "القاهرة", 30.0290, 31.2420],
+  ["جامعة القاهرة", "الجيزة", 30.0276, 31.2101], ["العباسية", "القاهرة", 30.0720, 31.2830],
+  ["جامعة عين شمس", "العباسية", 30.0770, 31.2850], ["شبرا", "القاهرة", 30.0740, 31.2450],
+  ["إمبابة", "الجيزة", 30.0760, 31.2090], ["مصر الجديدة", "الكوربة", 30.0910, 31.3260],
+  ["سيتي ستارز", "مدينة نصر", 30.0729, 31.3456], ["مدينة نصر", "عباس العقاد", 30.0615, 31.3380],
+  ["مطار القاهرة", "مصر الجديدة", 30.1219, 31.4056], ["المعادي", "شارع ٩", 29.9602, 31.2569],
+  ["الهرم", "شارع الهرم", 30.0000, 31.1700], ["الأهرامات", "الجيزة", 29.9792, 31.1342],
+  ["كايرو فستيفال سيتي", "التجمع", 30.0290, 31.4080], ["الجامعة الأمريكية", "التجمع الخامس", 30.0189, 31.4996],
+  ["مول العرب", "٦ أكتوبر", 30.0070, 30.9730], ["الشيخ زايد", "الجيزة", 30.0440, 30.9770],
+].map(([name, sub, lat, lng]) => ({ name, sub, p: { lat, lng } }));
+// بحث بالعربي: بنتجاهل الهمزات والتاء المربوطة و"ال"
+const normAr = (t) => String(t).toLowerCase().replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/(^|\s)ال/g, "$1").replace(/\s+/g, " ").trim();
+function searchLocal(q) {
+  const n = normAr(q); if (!n) return [];
+  return PLACES.filter((pl) => normAr(pl.name + " " + pl.sub).includes(n));
+}
+// بحث أونلاين في OpenStreetMap (لو فيه نت) — محصور في القاهرة الكبرى
+async function searchOnline(q, signal) {
+  const u = `https://nominatim.openstreetmap.org/search?format=jsonv2&accept-language=ar&countrycodes=eg&viewbox=30.85,30.25,31.75,29.80&bounded=1&limit=6&q=${encodeURIComponent(q)}`;
+  const r = await fetch(u, { signal }); if (!r.ok) return [];
+  return (await r.json()).map((x) => { const parts = x.display_name.split("،").map((t) => t.trim()); return { name: x.name || parts[0], sub: parts.slice(1, 3).join("، "), p: { lat: +x.lat, lng: +x.lon } }; });
+}
+async function reverseName(p) {
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&accept-language=ar&zoom=17&lat=${p.lat}&lon=${p.lng}`);
+    const x = await r.json(), a = x.address || {};
+    return [a.road, a.suburb || a.neighbourhood || a.city_district].filter(Boolean).join("، ") || null;
+  } catch { return null; }
+}
+// الـ GPS بتاع الموبايل
+function getGps() {
+  return new Promise((res, rej) => {
+    if (!navigator.geolocation) return rej(new Error("unsupported"));
+    navigator.geolocation.getCurrentPosition((g) => res({ lat: g.coords.latitude, lng: g.coords.longitude }), rej, { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 });
+  });
+}
+// مركز عالم المحاكاة (الكباتن الوهميين بيلفوا حواليه) — بيتنقل لمكانك لو إنت بعيد
+let WORLD = { ...CENTER };
 function placeName(p) {
   let best = null;
   for (const pl of PLACES) { const d = dist(p, pl.p); if (!best || d < best.d) best = { d, name: pl.name }; }
@@ -338,24 +382,27 @@ function fareCents(a, b, mult = 1) { return Math.round((1500 + dist(a, b) / 1000
 // =====================================================================
 //  رسم الخريطة (Canvas) + شبكة H3
 // =====================================================================
-// شوارع ثابتة متولدة مرة واحدة (شكل خريطة فقط)
-const ROADS = (() => {
-  const roads = [];
-  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  for (let i = -12; i <= 12; i++) {
-    const main = i % 4 === 0;
-    const a = offset(CENTER, -6000, i * 420 + rnd() * 80), b = offset(CENTER, 6000, i * 420 + (rnd() - .5) * 600);
-    roads.push({ pts: [a, b], w: main ? 14 : 7 });
-    const c = offset(CENTER, i * 430 + rnd() * 90, -7000), d = offset(CENTER, i * 430 + (rnd() - .5) * 500, 7000);
-    roads.push({ pts: [c, d], w: main ? 14 : 7 });
+// شوارع وهمية (شكل خريطة فقط) — شبكة بتتولد حوالين أي مكان على الخريطة
+const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+function roadsNear(view) {
+  const cx = (view.center.lng - CENTER.lng) * M_PER_DEG_LNG, cy = (view.center.lat - CENTER.lat) * M_PER_DEG_LAT;
+  const hw = view.w * view.mpp * 0.7 + 800, hh = view.h * view.mpp * 0.8 + 800, roads = [];
+  // كل شارع خط ثابت: y = i·420 + إزاحة + ميل·x (فمبيتحركش لما الخريطة تتحرك)
+  for (let i = Math.floor((cy - hh) / 420); i <= Math.ceil((cy + hh) / 420); i++) {
+    const b = i * 420 + hash(i) * 80, k = (hash(i + .5) - .5) * 0.1, y = (x) => b + k * x;
+    roads.push({ pts: [offset(CENTER, cx - hw, y(cx - hw)), offset(CENTER, cx + hw, y(cx + hw))], w: i % 4 === 0 ? 14 : 7 });
   }
-  roads.push({ pts: [offset(CENTER, -5000, -5000), offset(CENTER, 5000, 5000)], w: 18 });
-  roads.push({ pts: [offset(CENTER, -5000, 4200), offset(CENTER, 4800, -4600)], w: 16 });
+  for (let i = Math.floor((cx - hw) / 430); i <= Math.ceil((cx + hw) / 430); i++) {
+    const b = i * 430 + hash(-i) * 90, k = (hash(-i - .5) - .5) * 0.07, x = (y) => b + k * y;
+    roads.push({ pts: [offset(CENTER, x(cy - hh), cy - hh), offset(CENTER, x(cy + hh), cy + hh)], w: i % 4 === 0 ? 14 : 7 });
+  }
+  roads.push({ pts: [offset(CENTER, -40000, -40000), offset(CENTER, 40000, 40000)], w: 18 });
+  roads.push({ pts: [offset(CENTER, -40000, 34000), offset(CENTER, 38000, -36000)], w: 16 });
   return roads;
-})();
+}
 const NILE = (() => {
   const pts = [];
-  for (let y = -8000; y <= 8000; y += 250) pts.push(offset(CENTER, -650 + Math.sin(y / 1700) * 380 + y * 0.06, y));
+  for (let y = -40000; y <= 40000; y += 250) pts.push(offset(CENTER, -650 + Math.sin(y / 1700) * 380 + y * 0.06, y));
   return pts;
 })();
 
@@ -372,11 +419,11 @@ class MapView {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   // المركز البصري أعلى شوية عشان الـ bottom sheet
-  get cy() { return this.h * 0.36; }
+  get cy() { return this._cy ?? this.h * 0.36; }
   proj(p) { return [this.w / 2 + (p.lng - this.center.lng) * M_PER_DEG_LNG / this.mpp, this.cy - (p.lat - this.center.lat) * M_PER_DEG_LAT / this.mpp]; }
   unproj(x, y) { return { lat: this.center.lat - (y - this.cy) * this.mpp / M_PER_DEG_LAT, lng: this.center.lng + (x - this.w / 2) * this.mpp / M_PER_DEG_LNG }; }
   visibleCells() {
-    const key = this.center.lat.toFixed(3) + "," + this.center.lng.toFixed(3) + "," + this.w;
+    const key = this.center.lat.toFixed(3) + "," + this.center.lng.toFixed(3) + "," + this.w + "," + this.mpp.toFixed(1);
     if (this.cellCache.key === key) return this.cellCache.cells;
     const pad = 700 / this.mpp;
     const poly = [this.unproj(-pad, -pad), this.unproj(this.w + pad, -pad), this.unproj(this.w + pad, this.h + pad), this.unproj(-pad, this.h + pad)].map(p => [p.lat, p.lng]);
@@ -392,9 +439,9 @@ class MapView {
     c.lineCap = "round"; c.lineJoin = "round";
     this.path(NILE); c.strokeStyle = "#16304a"; c.lineWidth = 260 / this.mpp; c.stroke();
     // الشوارع
-    for (const r of ROADS) { this.path(r.pts); c.strokeStyle = r.w > 10 ? "#2b3340" : "#222933"; c.lineWidth = r.w / this.mpp * 2.2; c.stroke(); }
+    for (const r of roadsNear(this)) { if (this.mpp > 25 && r.w < 10) continue; this.path(r.pts); c.strokeStyle = r.w > 10 ? "#2b3340" : "#222933"; c.lineWidth = r.w / this.mpp * 2.2; c.stroke(); }
     // شبكة H3
-    for (const cell of this.visibleCells()) {
+    for (const cell of this.mpp > 22 ? [] : this.visibleCells()) {
       this.path(cell.boundary); c.closePath();
       const hl = highlight && highlight.get(cell.id);
       if (hl) { c.fillStyle = hl; c.fill(); }
@@ -874,14 +921,14 @@ class SimDriver {
   constructor(i) {
     this.id = "d-" + String(i).padStart(2, "0");
     const ang = rand(0, 6.28), r = rand(900, 3200);
-    this.pos = offset(CENTER, Math.cos(ang) * r, Math.sin(ang) * r);
+    this.pos = offset(WORLD, Math.cos(ang) * r, Math.sin(ang) * r);
     this.heading = 0; this.newTarget();
     this.meta = { name: pick(NAMES), car: pick(CARS), plate: `${pick(LETTERS)} ${ar(Math.floor(rand(100, 9999)))}`, baseRating: +rand(4.6, 4.98).toFixed(2) };
     this.trip = null; this.phase = "cruise";
     server.clients.drivers.set(this.id, (m) => this.onMsg(m));
     setInterval(() => server.updateLocation(this.id, this.pos, this.meta), 1000 + Math.random() * 200);
   }
-  newTarget() { const ang = rand(0, 6.28), r = rand(900, 3400); this.target = offset(CENTER, Math.cos(ang) * r, Math.sin(ang) * r); }
+  newTarget() { const ang = rand(0, 6.28), r = rand(900, 3400); this.target = offset(WORLD, Math.cos(ang) * r, Math.sin(ang) * r); }
   onMsg(m) {
     if (m.type === "trip_offer") {
       this.pendingOffer = m.trip.id;
@@ -913,6 +960,14 @@ class SimDriver {
   }
 }
 const sims = LIVE ? [] : Array.from({ length: 34 }, (_, i) => new SimDriver(i + 1));
+// في المحاكاة: لو مكانك الحقيقي بعيد عن الكباتن الوهميين، ننقلهم حواليك
+function moveWorldTo(c) {
+  if (LIVE || dist(c, WORLD) < 4000) return;
+  const dLat = c.lat - WORLD.lat, dLng = c.lng - WORLD.lng, sh = (p) => p && { lat: p.lat + dLat, lng: p.lng + dLng };
+  for (const sm of sims) if (!sm.trip) { sm.pos = sh(sm.pos); sm.target = sh(sm.target); server.updateLocation(sm.id, sm.pos, sm.meta); }
+  WORLD = { ...c };
+  if (typeof me !== "undefined" && !me.trip) me.pos = offset(c, 520, -380);
+}
 
 // =====================================================================
 //  تطبيق الزبون
@@ -943,7 +998,7 @@ function riderOnMsg(m) {
 }
 function riderRecord(t) {
   if (rider.history.some((h) => h.id === t.id)) return;
-  rider.history.unshift({ id: t.id, at: Date.now(), status: t.status, fare: t.fare, pickupName: rider.pickName, dropName: rider.dropName,
+  rider.history.unshift({ id: t.id, at: Date.now(), status: t.status, fare: t.fare, pickupName: rider.pickName, dropName: rider.dropName, dropPoint: rider.dropoff,
     driverName: t.driver?.name, car: t.driver?.car, cancelledBy: t.cancelledBy, pay: rider.pay, type: t.type, stars: 0 });
   rider.history = rider.history.slice(0, 50); store.set("ft-rider-history", rider.history);
 }
@@ -966,6 +1021,59 @@ document.getElementById("riderMap").addEventListener("click", (e) => {
 });
 const payOf = (id) => PAY_METHODS.find((x) => x.id === id) || PAY_METHODS[0];
 
+// ---------- البحث عن مكان + مكاني الحالي ----------
+let searchSeq = 0, searchAbort = null, searchTimer = null;
+function riderSearch(q) {
+  const box = document.getElementById("rResults"); if (!box) return;
+  const pm = rider.pickMode, seq = ++searchSeq;
+  const row = (pl, i, icon = "📍") => `<div class="lrow pick" data-i="${i}"><span>${icon}</span><div class="grow"><div class="ttl">${esc(pl.name)}</div><div class="muted">${esc(pl.sub || "")}${pl.p ? " · " + (dist(rider.pickup, pl.p) / 1000).toFixed(1) + " كم" : ""}</div></div></div>`;
+  const gpsRow = `<div class="lrow pick" data-gps><span class="gps-ic">◎</span><div class="grow"><div class="ttl">${pm === "pickup" ? "مكاني الحالي" : "استخدم مكاني الحالي كنقطة ركوب"}</div><div class="muted" id="gpsMsg">من الـ GPS بتاع موبايلك</div></div></div>`;
+  let list = [];
+  const draw = (extra = "") => {
+    box.innerHTML = (q.trim() ? "" : gpsRow) + list.map((pl, i) => row(pl, i, pl.icon)).join("") + extra;
+    box.querySelectorAll("[data-i]").forEach((el) => el.onclick = () => { const pl = list[+el.dataset.i]; setRiderPoint(pm, pl.p, pl.name); });
+    const g = box.querySelector("[data-gps]"); if (g) g.onclick = () => useMyLocation(g.querySelector("#gpsMsg"));
+  };
+  if (!q.trim()) {
+    const recent = pm === "dropoff" ? [...new Map(rider.history.filter((h) => h.status === "completed" && h.dropPoint).map((h) => [h.dropName, h])).values()].slice(0, 3).map((h) => ({ name: h.dropName, sub: "رحت هنا " + timeAgo(h.at), p: h.dropPoint, icon: "🕘" })) : [];
+    const near = PLACES.filter((pl) => dist(pl.p, rider.pickup) > 300).sort((a, b) => dist(a.p, rider.pickup) - dist(b.p, rider.pickup)).slice(0, 6);
+    list = [...recent, ...near];
+    draw(`<div class="muted" style="margin-top:8px">💡 أو دوس على أي حتة في الخريطة</div>`);
+    return;
+  }
+  list = searchLocal(q).slice(0, 6);
+  draw(`<div class="muted searching" style="padding:10px 2px">${list.length ? "" : "بندوّر…"}</div>`);
+  clearTimeout(searchTimer); searchAbort?.abort();
+  searchTimer = setTimeout(async () => {
+    searchAbort = new AbortController();
+    let online = [];
+    try { online = await searchOnline(q, searchAbort.signal); } catch { }
+    if (seq !== searchSeq) return;
+    const have = new Set(list.map((x) => normAr(x.name)));
+    const fresh = online.filter((x) => !have.has(normAr(x.name)));
+    if (!fresh.length && list.length) { box.querySelector(".searching")?.remove(); return; }
+    list = [...list, ...fresh].slice(0, 8);
+    draw(list.length ? "" : `<div class="empty" style="padding:24px 0"><div>🔎</div>ملقيناش «${esc(q)}» — جرب اسم تاني أو دوس على الخريطة</div>`);
+  }, 350);
+}
+async function useMyLocation(msgEl) {
+  if (msgEl) msgEl.textContent = "بنحدد مكانك…";
+  try {
+    const p = await getGps();
+    moveWorldTo(p);
+    rider.pickup = p; rider.pickName = "مكانك الحالي"; rider.located = true;
+    if (rider.dropoff && dist(rider.dropoff, p) > 60000) rider.dropoff = null;
+    rider.pickMode = "dropoff"; rider.state = rider.dropoff ? "choose" : "home"; renderRider();
+    const nm = await reverseName(p);
+    if (nm && rider.pickup === p) { rider.pickName = nm; if (["home", "choose"].includes(rider.state)) renderRider(); }
+  } catch (e) {
+    const why = e && e.code === 1 ? "إنت رافض صلاحية اللوكيشن — فعّلها من إعدادات المتصفح" : "مقدرناش نحدد مكانك دلوقتي";
+    if (msgEl) msgEl.textContent = why; else riderToast("📍 اللوكيشن", why);
+  }
+}
+// لو الصلاحية متاحة من قبل، نحدد مكانك أول ما التطبيق يفتح
+if (navigator.permissions) navigator.permissions.query({ name: "geolocation" }).then((st) => { if (st.state === "granted") useMyLocation(); }).catch(() => {});
+
 function renderRider() {
   renderRiderOverlay();
   const s = rider.state, sheet = document.getElementById("riderSheet");
@@ -973,6 +1081,10 @@ function renderRider() {
   const first = rider.profile ? esc(rider.profile.name.split(" ")[0]) : "";
   top.innerHTML = `<div class="pill btnish" id="rMenu">☰</div><div class="pill" style="flex:1;justify-content:center">${s === "home" ? (rider.pickMode === "pickup" ? "دوس على الخريطة تحدد مكان الركوب" : `أهلاً يا ${first} 👋`) : s === "choose" ? "اختار نوع العربية" : s === "searching" ? "بندورلك على كابتن…" : s === "rate" ? "الرحلة خلصت" : "رحلتك"}</div>`;
   top.querySelector("#rMenu").onclick = () => { rider.view = "menu"; renderRiderOverlay(); };
+  if (["home", "choose"].includes(s)) {
+    const g = document.createElement("div"); g.className = "pill btnish gps-ic"; g.title = "مكاني الحالي"; g.textContent = "◎";
+    g.onclick = () => useMyLocation(); top.appendChild(g);
+  }
   const dLen = rider.dropoff ? dist(rider.pickup, rider.dropoff) : 0;
   const stepsBar = (i) => `<div class="steps">${[0, 1, 2, 3].map(k => `<div class="${k < i ? "done" : k === i ? "cur" : ""}"></div>`).join("")}</div>`;
   const driverCard = (d) => d ? `<div class="driver-card"><div class="avatar">${esc(d.name[0])}</div><div style="flex:1"><b>${esc(d.name)}</b> <span class="muted">★ ${d.rating.toFixed(2)}</span><div class="muted">${esc(d.car)}</div></div><span class="plate">${esc(d.plate)}</span></div>` : "";
@@ -982,17 +1094,15 @@ function renderRider() {
   const bindFields = () => sheet.querySelectorAll("[data-mode]").forEach((f) => f.onclick = () => { rider.pickMode = f.dataset.mode; rider.state = "home"; renderRider(); });
 
   if (s === "home") {
-    const chips = rider.pickMode === "pickup"
-      ? [{ name: "مكاني الحالي", p: offset(CENTER, 0, 0) }, ...PLACES.slice(1)]
-      : PLACES.filter((p) => dist(p.p, rider.pickup) > 300);
-    const recent = [...new Map(rider.history.filter((h) => h.status === "completed").map((h) => [h.dropName, h])).values()].slice(0, 2);
-    sheet.innerHTML = `<div class="grab"></div><h3>${rider.pickMode === "pickup" ? "هتركب منين؟" : "رايح فين؟"}</h3>
+    const pm = rider.pickMode;
+    sheet.innerHTML = `<div class="grab"></div><h3>${pm === "pickup" ? "هتركب منين؟" : "رايح فين؟"}</h3>
       ${pointFields(true)}
-      <div class="chips">${chips.map((p, i) => `<button class="chip" data-place="${i}">📍 ${p.name}</button>`).join("")}</div>
-      ${recent.length && rider.pickMode === "dropoff" ? `<div class="muted" style="margin-bottom:4px">آخر أماكن رحتها</div>${recent.map((h, i) => `<div class="lrow" data-recent="${i}" style="cursor:pointer"><span>🕘</span><div class="grow"><div class="ttl">${esc(h.dropName)}</div><div class="muted">${timeAgo(h.at)}</div></div></div>`).join("")}` : `<div class="muted">💡 الخطوط البنفسجية الخفيفة على الخريطة هي خلايا H3 — السيرفر بيدور فيها على أقرب سواق.</div>`}`;
+      <div class="search"><span>🔍</span><input id="rSearch" autocomplete="off" enterkeyhint="search" placeholder="${pm === "pickup" ? "ابحث عن مكان الركوب" : "ابحث عن المكان اللي رايحه"}"></div>
+      <div id="rResults"></div>`;
     bindFields();
-    sheet.querySelectorAll("[data-place]").forEach(b => b.onclick = () => { const p = chips[+b.dataset.place]; setRiderPoint(rider.pickMode, p.p, p.name === "مكاني الحالي" ? "مكانك الحالي" : p.name); });
-    sheet.querySelectorAll("[data-recent]").forEach(b => b.onclick = () => { const h = recent[+b.dataset.recent]; const pl = PLACES.find((x) => x.name === h.dropName); if (pl) setRiderPoint("dropoff", pl.p, pl.name); });
+    const inp = sheet.querySelector("#rSearch");
+    inp.oninput = () => riderSearch(inp.value);
+    riderSearch("");
   } else if (s === "choose") {
     const pm = payOf(rider.pay);
     sheet.innerHTML = `<div class="grab"></div>
@@ -1343,8 +1453,24 @@ function frame(now) {
   }
   if (rider.state === "searching") rm.circle(rider.pickup, 300 + ((now / 4) % 900), "rgba(34,197,94,.5)");
   if (!["onTrip", "rate"].includes(rider.state)) rm.pin(rider.pickup, "#22c55e");
-  if (rider.state === "onTrip" && rider.driver) { const live = server.drivers.get(rider.driver.id); if (live) rm.center = { lat: rm.center.lat + (live.pos.lat - rm.center.lat) * .05, lng: rm.center.lng + (live.pos.lng - rm.center.lng) * .05 }; }
-  if (rider.state === "home") rm.center = { ...rider.pickup };
+  // الكاميرا: بتجمع النقط المهمة في الجزء اللي باين من الخريطة فوق الـ sheet
+  let wantMpp = 9, focus = null;
+  const liveDrv = rider.driver && server.drivers.get(rider.driver.id);
+  if (rider.state === "home") { rm.center = { ...rider.pickup }; rm._cy = null; }
+  else if ((rider.state === "choose" || rider.state === "searching") && rider.dropoff) focus = [rider.pickup, rider.dropoff];
+  else if ((rider.state === "accepted" || rider.state === "arrived") && liveDrv) focus = [rider.pickup, liveDrv.pos];
+  else if (rider.state === "onTrip" && liveDrv) focus = [liveDrv.pos, rider.dropoff];
+  if (focus) {
+    const [a, b] = focus, dx = Math.abs(a.lng - b.lng) * M_PER_DEG_LNG, dy = Math.abs(a.lat - b.lat) * M_PER_DEG_LAT;
+    const sheetTop = rm.h - document.getElementById("riderSheet").offsetHeight;
+    const topY = 80, botY = Math.max(topY + 120, sheetTop - 24);
+    const cyWant = (topY + botY) / 2;
+    rm._cy = rm._cy == null ? cyWant : rm._cy + (cyWant - rm._cy) * .15;
+    wantMpp = Math.max(9, Math.min(90, Math.max(dx / (rm.w * 0.78), dy / ((botY - topY) * 0.85))));
+    const mid = { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 };
+    rm.center = { lat: rm.center.lat + (mid.lat - rm.center.lat) * .12, lng: rm.center.lng + (mid.lng - rm.center.lng) * .12 };
+  }
+  rm.mpp += (wantMpp - rm.mpp) * .15; if (Math.abs(rm.mpp - wantMpp) < .05) rm.mpp = wantMpp;
 
   // ===== خريطة الكابتن =====
   const dm = me.map;
@@ -1397,7 +1523,7 @@ if (APP === "driver" && !LIVE) {
     if (!me.online || me.state !== "idle") return;
     const ang = Math.random() * Math.PI * 2, r = 250 + Math.random() * 500;
     const pickup = offset(me.pos, Math.cos(ang) * r, Math.sin(ang) * r);
-    const far = PLACES.filter((p) => dist(p.p, pickup) > 900);
+    const far = PLACES.filter((p) => dist(p.p, pickup) > 900 && dist(p.p, pickup) < 9000);
     const dest = far[Math.floor(Math.random() * far.length)] || PLACES[0];
     const type = RIDE_TYPES[Math.random() < 0.7 ? 0 : 1];
     server.requestTrip("r-sim-" + ++n, pickup, dest.p, type, { riderName: NAMES[n % NAMES.length], pickupName: placeName(pickup), dropoffName: dest.name });
