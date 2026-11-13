@@ -30,7 +30,13 @@
   .phone{width:360px;height:740px;border-radius:44px;background:#000;padding:10px;box-shadow:0 30px 60px rgba(0,0,0,.5),0 0 0 1px #2b2f36 inset;position:relative}
   .screen{width:100%;height:100%;border-radius:36px;overflow:hidden;position:relative;background:#14181f}
   .notch{position:absolute;top:10px;left:50%;transform:translateX(-50%);width:110px;height:28px;background:#000;border-radius:0 0 16px 16px;z-index:20}
-  canvas.map{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
+  canvas.map{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair;touch-action:none}
+  .zoom{position:absolute;left:12px;top:104px;z-index:9;display:flex;flex-direction:column;background:rgba(14,17,22,.88);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.35)}
+  .zoom button{width:42px;height:42px;border:0;background:none;color:var(--text);font:700 22px/1 Cairo,system-ui,sans-serif;cursor:pointer}
+  .zoom button+button{border-top:1px solid var(--line)}
+  .zoom button:active{background:rgba(255,255,255,.08)}
+  .zoom .rc{font-size:17px;color:var(--blue)}
+  .zoom .rc[hidden]{display:none}
   .statusbar{position:absolute;top:0;inset-inline:0;height:40px;display:flex;justify-content:space-between;align-items:center;padding:0 26px;font-size:12px;font-weight:700;z-index:15;pointer-events:none}
   .topbar{position:absolute;top:46px;inset-inline:12px;z-index:10;display:flex;gap:8px;align-items:center}
   .pill{background:rgba(22,27,34,.92);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:999px;padding:8px 14px;font-size:13px;display:flex;align-items:center;gap:8px}
@@ -132,6 +138,7 @@
   .search{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:0 12px;margin:2px 0 4px}
   .search:focus-within{border-color:var(--accent)}
   .search input{flex:1;background:none;border:0;outline:none;color:var(--text);font-family:inherit;font-size:15px;padding:12px 0}
+  .sheet.home{max-height:54%}
   .lrow.pick{cursor:pointer;padding:10px 2px}
   .lrow.pick:hover{background:rgba(255,255,255,.03)}
   .gps-ic{color:var(--blue);font-size:18px;font-weight:800}
@@ -411,6 +418,53 @@ class MapView {
     this.cv = canvas; this.ctx = canvas.getContext("2d");
     this.center = { ...center }; this.mpp = mpp; this.cellCache = { key: "", cells: [] };
     new ResizeObserver(() => this.resize()).observe(canvas); this.resize();
+    this.manual = false; this.dragged = false; this.initGestures();
+  }
+  // الزوم: بصباعين، بعجلة الماوس، أو بالزراير — والسحب بيحرك الخريطة
+  zoomAt(factor, ax = this.w / 2, ay = this.cy) {
+    const before = this.unproj(ax, ay);
+    this.mpp = Math.max(1.5, Math.min(120, this.mpp * factor));
+    const after = this.unproj(ax, ay);
+    this.center = { lat: this.center.lat + before.lat - after.lat, lng: this.center.lng + before.lng - after.lng };
+    this.manual = true; this.onManual?.();
+  }
+  panBy(dx, dy) {
+    this.center = { lat: this.center.lat + dy * this.mpp / M_PER_DEG_LAT, lng: this.center.lng - dx * this.mpp / M_PER_DEG_LNG };
+    this.manual = true; this.onManual?.();
+  }
+  initGestures() {
+    const cv = this.cv, pts = new Map();
+    let start = null, pinch = null;
+    const local = (e) => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    cv.addEventListener("pointerdown", (e) => {
+      cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, local(e));
+      if (pts.size === 1) { start = local(e); this.dragged = false; }
+      if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = Math.hypot(a[0] - b[0], a[1] - b[1]); this.dragged = true; }
+    });
+    cv.addEventListener("pointermove", (e) => {
+      if (!pts.has(e.pointerId)) return;
+      const prev = pts.get(e.pointerId), cur = local(e); pts.set(e.pointerId, cur);
+      if (pts.size === 1) {
+        if (!this.dragged && Math.hypot(cur[0] - start[0], cur[1] - start[1]) < 7) return;
+        this.dragged = true; this.panBy(cur[0] - prev[0], cur[1] - prev[1]);
+      } else if (pts.size === 2) {
+        const [a, b] = [...pts.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        if (pinch) this.zoomAt(pinch / d, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+        pinch = d;
+      }
+    });
+    const up = (e) => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; };
+    cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
+    cv.addEventListener("wheel", (e) => { e.preventDefault(); const [x, y] = local(e); this.zoomAt(Math.exp(e.deltaY * 0.0015), x, y); }, { passive: false });
+    // زراير + و − ورجوع للمكان
+    const box = document.createElement("div"); box.className = "zoom";
+    box.innerHTML = `<button title="تكبير">+</button><button title="تصغير">−</button><button class="rc" title="رجّع الخريطة" hidden>◎</button>`;
+    const [zin, zout, rc] = box.querySelectorAll("button");
+    zin.onclick = () => this.zoomAt(1 / 1.6); zout.onclick = () => this.zoomAt(1.6);
+    rc.onclick = () => { this.manual = false; rc.hidden = true; };
+    this.onManual = () => { rc.hidden = false; };
+    this.resetManual = () => { this.manual = false; rc.hidden = true; };
+    cv.parentElement.appendChild(box);
   }
   resize() {
     const r = this.cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
@@ -1014,6 +1068,7 @@ function setRiderPoint(mode, p, name) {
   renderRider();
 }
 document.getElementById("riderMap").addEventListener("click", (e) => {
+  if (rider.map.dragged) { rider.map.dragged = false; return; }
   if (!["home", "choose"].includes(rider.state)) return;
   const r = e.target.getBoundingClientRect();
   const p = rider.map.unproj(e.clientX - r.left, e.clientY - r.top);
@@ -1077,6 +1132,7 @@ if (navigator.permissions) navigator.permissions.query({ name: "geolocation" }).
 function renderRider() {
   renderRiderOverlay();
   const s = rider.state, sheet = document.getElementById("riderSheet");
+  sheet.classList.toggle("home", s === "home");
   const top = document.getElementById("riderTop");
   const first = rider.profile ? esc(rider.profile.name.split(" ")[0]) : "";
   top.innerHTML = `<div class="pill btnish" id="rMenu">☰</div><div class="pill" style="flex:1;justify-content:center">${s === "home" ? (rider.pickMode === "pickup" ? "دوس على الخريطة تحدد مكان الركوب" : `أهلاً يا ${first} 👋`) : s === "choose" ? "اختار نوع العربية" : s === "searching" ? "بندورلك على كابتن…" : s === "rate" ? "الرحلة خلصت" : "رحلتك"}</div>`;
@@ -1454,13 +1510,16 @@ function frame(now) {
   if (rider.state === "searching") rm.circle(rider.pickup, 300 + ((now / 4) % 900), "rgba(34,197,94,.5)");
   if (!["onTrip", "rate"].includes(rider.state)) rm.pin(rider.pickup, "#22c55e");
   // الكاميرا: بتجمع النقط المهمة في الجزء اللي باين من الخريطة فوق الـ sheet
+  // (لو إنت حركت أو عملت زوم بإيدك، بتسيبك لحد ما الحالة تتغير أو تدوس ◎)
+  if (rm.lastState !== rider.state || rm.lastPick !== rider.pickup || rm.lastDrop !== rider.dropoff) { rm.resetManual(); rm.lastState = rider.state; rm.lastPick = rider.pickup; rm.lastDrop = rider.dropoff; }
   let wantMpp = 9, focus = null;
   const liveDrv = rider.driver && server.drivers.get(rider.driver.id);
-  if (rider.state === "home") { rm.center = { ...rider.pickup }; rm._cy = null; }
+  if (rm.manual) { /* المستخدم ماسك الكاميرا */ }
+  else if (rider.state === "home") { rm.center = { ...rider.pickup }; rm._cy = null; }
   else if ((rider.state === "choose" || rider.state === "searching") && rider.dropoff) focus = [rider.pickup, rider.dropoff];
   else if ((rider.state === "accepted" || rider.state === "arrived") && liveDrv) focus = [rider.pickup, liveDrv.pos];
   else if (rider.state === "onTrip" && liveDrv) focus = [liveDrv.pos, rider.dropoff];
-  if (focus) {
+  if (focus && !rm.manual) {
     const [a, b] = focus, dx = Math.abs(a.lng - b.lng) * M_PER_DEG_LNG, dy = Math.abs(a.lat - b.lat) * M_PER_DEG_LAT;
     const sheetTop = rm.h - document.getElementById("riderSheet").offsetHeight;
     const topY = 80, botY = Math.max(topY + 120, sheetTop - 24);
@@ -1470,11 +1529,12 @@ function frame(now) {
     const mid = { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 };
     rm.center = { lat: rm.center.lat + (mid.lat - rm.center.lat) * .12, lng: rm.center.lng + (mid.lng - rm.center.lng) * .12 };
   }
-  rm.mpp += (wantMpp - rm.mpp) * .15; if (Math.abs(rm.mpp - wantMpp) < .05) rm.mpp = wantMpp;
+  if (!rm.manual) { rm.mpp += (wantMpp - rm.mpp) * .15; if (Math.abs(rm.mpp - wantMpp) < .05) rm.mpp = wantMpp; }
 
   // ===== خريطة الكابتن =====
   const dm = me.map;
-  dm.center = me.online ? { ...me.pos } : { ...me.pos };
+  if (dm.lastState !== me.state) { dm.resetManual(); dm.lastState = me.state; }
+  if (!dm.manual) { dm.center = { ...me.pos }; dm.mpp += (7 - dm.mpp) * .15; }
   dm.drawBase(new Map(me.online ? [[h3.latLngToCell(me.pos.lat, me.pos.lng, RES), "rgba(34,197,94,.12)"]] : []));
   for (const s of (LIVE ? [...server.drivers.values()].filter(d => d.id !== me.id) : sims)) dm.car(s.pos, s.heading || 0, "#475569");
   if (me.trip && me.state !== "idle") {
