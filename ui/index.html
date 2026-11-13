@@ -36,7 +36,7 @@
   .zoom button+button{border-top:1px solid var(--line)}
   .zoom button:active{background:rgba(255,255,255,.08)}
   .zoom .rc{font-size:17px;color:var(--blue)}
-  .attrib{position:absolute;left:12px;top:238px;z-index:9;font-size:9.5px;color:rgba(203,213,225,.55);direction:ltr;pointer-events:none;display:none}
+  .attrib{position:absolute;left:12px;top:238px;z-index:9;font-size:9.5px;color:#334155;background:rgba(255,255,255,.75);padding:1px 5px;border-radius:4px;direction:ltr;pointer-events:none;display:none}
   .attrib.on{display:block}
   .zoom .rc[hidden]{display:none}
   .statusbar{position:absolute;top:0;inset-inline:0;height:40px;display:flex;justify-content:space-between;align-items:center;padding:0 26px;font-size:12px;font-weight:700;z-index:15;pointer-events:none}
@@ -427,8 +427,9 @@ const NILE = (() => {
   return pts;
 })();
 
-// ===== خريطة حقيقية (OpenStreetMap عن طريق CARTO) — ولو مفيش نت بنرجع للخريطة المرسومة =====
-const TILE_URL = (z, x, y) => `https://${"abcd"[(x + y) % 4]}.basemaps.cartocdn.com/dark_all/${z}/${x}/${y}@2x.png`;
+// ===== خريطة حقيقية (OpenStreetMap — من غير مفتاح API) — ولو مفيش نت بنرجع للخريطة المرسومة =====
+const TILE_URL = (z, x, y) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+const TILE_PX = 256;
 const tiles = new Map();          // "z/x/y" -> { img, ok }
 let tilesOk = 0, tilesFail = 0;   // لو كله فشل، بنستخدم الخريطة المرسومة
 const lng2tx = (lng, z) => (lng + 180) / 360 * 2 ** z;
@@ -448,7 +449,10 @@ function getTile(z, x, y) {
 }
 const realMap = () => tilesOk > 0 || tilesFail < 6;
 
+// الخريطة الحقيقية فاتحة، فالألوان الفاتحة بتتقلب لغامقة عشان تبان
+const ON_LIGHT = { "#e2e8f0": "#1f2937", "rgba(255,255,255,.35)": "rgba(17,24,39,.6)", "#475569": "#334155", "#94a3b8": "#64748b", "rgba(34,197,94,.5)": "rgba(22,163,74,.8)" };
 class MapView {
+  col(c) { return this.real ? ON_LIGHT[c] || c : c; }
   constructor(canvas, center, mpp) {
     this.cv = canvas; this.ctx = canvas.getContext("2d");
     this.center = { ...center }; this.s = 1; this.mpp = mpp; this.cellCache = { key: "", cells: [] };
@@ -502,7 +506,7 @@ class MapView {
     this.onManual = () => { rc.hidden = false; };
     this.resetManual = () => { this.manual = false; rc.hidden = true; };
     cv.parentElement.appendChild(box);
-    const at = document.createElement("div"); at.className = "attrib"; at.innerHTML = "© OpenStreetMap · © CARTO";
+    const at = document.createElement("div"); at.className = "attrib"; at.innerHTML = "© OpenStreetMap contributors";
     cv.parentElement.appendChild(at); this.attribEl = at;
   }
   resize() {
@@ -544,7 +548,7 @@ class MapView {
     c.fillStyle = "#151a21"; c.fillRect(0, 0, this.w, this.h);
     this.real = realMap() && this.drawTiles();
     if (this.attribEl && this.attribEl.classList.contains("on") !== !!this.real) this.attribEl.classList.toggle("on", !!this.real);
-    if (this.real) { this.drawCells(highlight, .05); return; }
+    if (this.real) { this.drawCells(highlight, .07, "30,41,59"); return; }
     // النيل
     c.lineCap = "round"; c.lineJoin = "round";
     this.path(NILE); c.strokeStyle = "#16304a"; c.lineWidth = 260 / this.mpp; c.stroke();
@@ -554,35 +558,37 @@ class MapView {
     this.drawLabels();
   }
   // شبكة H3
-  drawCells(highlight, alpha) {
+  drawCells(highlight, alpha, rgb = "148,163,184") {
     const c = this.ctx;
     for (const cell of this.mpp > 22 ? [] : this.visibleCells()) {
       const hl = highlight && highlight.get(cell.id);
-      if (!hl && alpha < .06 && this.mpp > 14) continue;
+      if (!hl && this.real && this.mpp > 14) continue;
       this.path(cell.boundary); c.closePath();
       if (hl) { c.fillStyle = hl; c.fill(); }
-      c.strokeStyle = hl ? "rgba(168,85,247,.55)" : `rgba(148,163,184,${alpha})`; c.lineWidth = 1; c.stroke();
+      c.strokeStyle = hl ? "rgba(147,51,234,.7)" : `rgba(${rgb},${alpha})`; c.lineWidth = 1; c.stroke();
     }
   }
   // بلاطات الخريطة الحقيقية
   drawTiles() {
     const c = this.ctx;
-    const z = Math.max(0, Math.min(19, Math.round(Math.log2(this.s))));
+    // على شاشات الموبايل (dpr ٢-٣) بنجيب زوم أعلى بدرجة عشان الكلام يبقى واضح
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const z = Math.max(0, Math.min(19, Math.round(Math.log2(this.s * dpr))));
     const n = 2 ** z, t = 256 / n;                    // حجم البلاطة بوحدات العالم
     const Xc = MapView.wx(this.center.lng), Yc = MapView.wy(this.center.lat);
     const X0 = Xc - this.w / 2 / this.s, X1 = Xc + this.w / 2 / this.s, Y0 = Yc - this.cy / this.s, Y1 = Yc + (this.h - this.cy) / this.s;
     const x0 = Math.floor(X0 / t), x1 = Math.floor(X1 / t), y0 = Math.max(0, Math.floor(Y0 / t)), y1 = Math.min(n - 1, Math.floor(Y1 / t));
-    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 90) return false;
-    c.fillStyle = "#0b0e12"; c.fillRect(0, 0, this.w, this.h);
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 120) return false;
+    c.fillStyle = "#f2efe9"; c.fillRect(0, 0, this.w, this.h);
     let drawn = 0;
     for (let xi = x0; xi <= x1; xi++) for (let y = y0; y <= y1; y++) {
       const x = ((xi % n) + n) % n;
       const ax = this.w / 2 + (xi * t - Xc) * this.s, ay = this.cy + (y * t - Yc) * this.s, size = t * this.s;
-      let tl = getTile(z, x, y), sx = 0, sy = 0, sw = 512, sh = 512;
+      let tl = getTile(z, x, y), sx = 0, sy = 0, sw = TILE_PX, sh = TILE_PX;
       // لسه بيحمّل؟ نستخدم البلاطة الأكبر (زوم أقل) مؤقتاً
       for (let k = 1; !tl.ok && k <= 4 && z - k >= 0; k++) {
         const p = tiles.get(`${z - k}/${x >> k}/${y >> k}`);
-        if (p && p.ok) { const m = 2 ** k; sw = sh = 512 / m; sx = (x % m) * sw; sy = (y % m) * sh; tl = p; }
+        if (p && p.ok) { const m = 2 ** k; sw = sh = TILE_PX / m; sx = (x % m) * sw; sy = (y % m) * sh; tl = p; }
       }
       if (tl.ok) { c.drawImage(tl.img, sx, sy, sw, sh, ax, ay, size + .6, size + .6); drawn++; }
     }
@@ -594,11 +600,11 @@ class MapView {
     c.save(); c.translate(x, y);
     if (glow) { c.beginPath(); c.arc(0, 0, 18, 0, 7); c.fillStyle = glow; c.fill(); }
     c.rotate(heading);
-    c.fillStyle = color; c.strokeStyle = "rgba(0,0,0,.6)"; c.lineWidth = 1.5;
+    c.fillStyle = this.real && color === "#e2e8f0" ? "#ffffff" : color; c.strokeStyle = this.real ? "#111827" : "rgba(0,0,0,.6)"; c.lineWidth = this.real ? 2 : 1.5;
     roundRect(c, -6, -10, 12, 20, 3); c.fill(); c.stroke();
     c.fillStyle = "rgba(15,23,42,.75)"; roundRect(c, -4.5, -6, 9, 5, 1.5); c.fill();
     c.restore();
-    if (label) { c.font = "700 11px Cairo"; c.fillStyle = "#e2e8f0"; c.textAlign = "center"; c.fillText(label, x, y - 16); }
+    if (label) { c.font = "700 11px Cairo"; c.fillStyle = this.real ? "#111827" : "#e2e8f0"; c.textAlign = "center"; c.fillText(label, x, y - 16); }
   }
   // أسامي الأماكن على الخريطة (من غير ما تركب على بعض)
   drawLabels() {
@@ -649,6 +655,7 @@ class MapView {
     c.restore();
   }
   pin(p, color, square) {
+    color = this.col(color);
     const c = this.ctx, [x, y] = this.proj(p);
     c.beginPath(); c.arc(x, y, 14, 0, 7); c.fillStyle = color + "33"; c.fill();
     c.fillStyle = color; c.strokeStyle = "#fff"; c.lineWidth = 3;
@@ -656,10 +663,10 @@ class MapView {
     else { c.beginPath(); c.arc(x, y, 7, 0, 7); c.fill(); c.stroke(); }
   }
   line(a, b, color, dashed) {
-    const c = this.ctx; this.path([a, b]); c.strokeStyle = color; c.lineWidth = 4; c.setLineDash(dashed ? [8, 8] : []); c.stroke(); c.setLineDash([]);
+    const c = this.ctx; this.path([a, b]); c.strokeStyle = this.col(color); c.lineWidth = 4; c.setLineDash(dashed ? [8, 8] : []); c.stroke(); c.setLineDash([]);
   }
   circle(p, meters, color) {
-    const c = this.ctx, [x, y] = this.proj(p); c.beginPath(); c.arc(x, y, meters / this.mpp, 0, 7); c.strokeStyle = color; c.lineWidth = 1.5; c.setLineDash([4, 6]); c.stroke(); c.setLineDash([]);
+    const c = this.ctx, [x, y] = this.proj(p); c.beginPath(); c.arc(x, y, meters / this.mpp, 0, 7); c.strokeStyle = this.col(color); c.lineWidth = 1.5; c.setLineDash([4, 6]); c.stroke(); c.setLineDash([]);
   }
 }
 function roundRect(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
