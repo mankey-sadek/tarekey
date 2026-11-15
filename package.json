@@ -9,6 +9,8 @@
     "start": "tsx src/index.ts",
     "sim": "tsx sim/simulator.ts",
     "test": "node --import tsx --test test/*.test.ts",
+    "pretest:ui": "node ui/build.mjs",
+    "test:ui": "node --import tsx --test --test-concurrency=1 test-ui/*.test.ts",
     "typecheck": "tsc --noEmit",
     "ui:build": "node ui/build.mjs",
     "bench": "tsx bench/locationBench.ts"
@@ -22,6 +24,7 @@
   "devDependencies": {
     "@types/node": "^26.6.6",
     "@types/ws": "^8.18.2",
+    "playwright": "^1.63.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   },
