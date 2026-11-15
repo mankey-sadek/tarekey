@@ -307,7 +307,7 @@ function renderTables() {
 
 // ================= الاتصال =================
 function connect() {
-  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?role=monitor&id=dashboard`);
+  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?role=monitor&id=dashboard&key=${encodeURIComponent(new URLSearchParams(location.search).get("key") ?? "")}`);
   ws.onopen = () => { $("live").classList.add("on"); $("live").lastChild.textContent = "متصل بالسيرفر — مباشر"; };
   ws.onclose = () => { $("live").classList.remove("on"); $("live").lastChild.textContent = "الاتصال اتقطع… بنحاول تاني"; setTimeout(connect, 1500); };
   ws.onmessage = (ev) => {

@@ -1,4 +1,4 @@
-import { createServer, type Server } from "node:http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { readFileSync, existsSync } from "node:fs";
 import { InMemoryMessageQueue } from "./shared/messageBus.js";
 import { LocationService } from "./services/location/locationService.js";
@@ -10,6 +10,7 @@ import { AccountingService } from "./services/accounting/accountingService.js";
 import { RatingService } from "./services/rating/ratingService.js";
 import { NotificationService } from "./services/notification/notificationService.js";
 import { WsGateway } from "./gateway/wsGateway.js";
+import { AuthService, type AuthOptions } from "./services/auth/authService.js";
 
 export interface AppOptions {
   dispatch?: DispatchOptions;
@@ -17,6 +18,11 @@ export interface AppOptions {
   paymentGateway?: PaymentGateway;
   location?: ConstructorParameters<typeof LocationService>[0];
   log?: (line: string) => void;
+  auth?: AuthOptions;
+  /** الزبون والكابتن لازم يدخلوا بتوكن (OTP). الافتراضي false عشان الاختبارات والـ bench */
+  requireAuth?: boolean;
+  /** مفتاح لوحة المراقبة (?key=…). لو مش متحدد اللوحة مفتوحة */
+  monitorKey?: string;
 }
 
 /**
@@ -31,8 +37,10 @@ export function createApp(opts: AppOptions = {}) {
   const notifications = new NotificationService(bus).start();
   const payments = new PaymentService(bus, opts.paymentGateway ?? new FakePaymentGateway()).start();
   const ratings = new RatingService(bus).start();
+  const auth = new AuthService(opts.auth);
   const gateway = new WsGateway({
     bus, location, dispatch, trips, notifications,
+    auth, requireAuth: opts.requireAuth ?? false, monitorKey: opts.monitorKey,
     monitorStats: () => ({
       platformRevenueCents: accounting.balance("platform:revenue"),
       ledgerEntries: accounting.ledger.length,
@@ -53,6 +61,7 @@ export function createApp(opts: AppOptions = {}) {
 
   const http: Server = createServer((req, res) => {
     if (req.url === "/health") return void res.end("ok");
+    if (req.method === "POST" && (req.url === "/auth/otp" || req.url === "/auth/verify")) return void handleAuth(req, res);
     if (req.url === "/stats") {
       res.setHeader("content-type", "application/json");
       return void res.end(
@@ -91,13 +100,37 @@ export function createApp(opts: AppOptions = {}) {
     res.statusCode = 404;
     res.end("not found");
   });
+  /** POST /auth/otp {phone, role} و POST /auth/verify {phone, role, code} */
+  function handleAuth(req: IncomingMessage, res: ServerResponse) {
+    const reply = (status: number, body: object) => {
+      res.statusCode = status;
+      res.setHeader("content-type", "application/json");
+      res.setHeader("cache-control", "no-store");
+      res.end(JSON.stringify(body));
+    };
+    let raw = "";
+    req.setEncoding("utf8");
+    req.on("data", (c: string) => {
+      raw += c;
+      if (raw.length > 1024) { reply(413, { ok: false, code: "too_large" }); req.destroy(); }
+    });
+    req.on("end", async () => {
+      if (res.writableEnded) return;
+      let b: any;
+      try { b = JSON.parse(raw || "{}"); } catch { return reply(400, { ok: false, code: "bad_json" }); }
+      const r = req.url === "/auth/otp" ? await auth.requestOtp(b.phone, b.role) : auth.verifyOtp(b.phone, b.role, b.code);
+      const status = r.ok ? 200 : r.code === "too_soon" || r.code === "too_many_attempts" ? 429 : 400;
+      reply(status, r);
+    });
+  }
+
   http.on("upgrade", (req, socket, head) => {
     if (!req.url?.startsWith("/ws")) return void socket.destroy();
     gateway.wss.handleUpgrade(req, socket, head, (ws) => gateway.wss.emit("connection", ws, req));
   });
 
   return {
-    bus, location, trips, dispatch, notifications, payments, ratings, accounting, gateway, http,
+    bus, location, trips, dispatch, notifications, payments, ratings, accounting, auth, gateway, http,
     /** لو البورت مشغول بيجرب اللي بعده (لحد ١٠ محاولات) */
     listen(port = 0): Promise<number> {
       return new Promise((resolve, reject) => {

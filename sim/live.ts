@@ -14,7 +14,11 @@ const PORT = Number(process.env.PORT ?? 8080);
 const SPEED = Number(process.env.SPEED ?? 70); // متر/ثانية (المحاكاة متسرّعة)
 const AREA = 5000; // نص قطر المنطقة بالمتر
 
-const app = createApp({ location: { minUpdateIntervalMs: 0 }, dispatch: { fanout: 3, offerTtlMs: 8000 } });
+// التوثيق شغال زي الإنتاج، بس كود الـ OTP بيظهر في التطبيق نفسه (مفيش SMS حقيقي هنا)
+const app = createApp({
+  location: { minUpdateIntervalMs: 0 }, dispatch: { fanout: 3, offerTtlMs: 8000 },
+  requireAuth: true, auth: { exposeDevCode: true, secret: process.env.JWT_SECRET },
+});
 const port = await app.listen(PORT);
 console.log(`\n🚗 في طريقك — live simulation`);
 console.log(`   Dashboard:  http://localhost:${port}/`);
@@ -46,7 +50,7 @@ interface Driver {
 const drivers: Driver[] = [];
 for (let i = 0; i < DRIVERS; i++) {
   const id = `d${String(i).padStart(3, "0")}`;
-  const ws = await TestClient.connect(`ws://127.0.0.1:${port}`, "driver", id);
+  const ws = await TestClient.connect(`ws://127.0.0.1:${port}`, "driver", id, app.auth.issueToken("driver", id));
   const d: Driver = { id, ws, pos: randomPoint(), target: randomPoint(), phase: "cruise" };
   ws.ws.on("message", (raw) => onDriverMessage(d, JSON.parse(raw.toString())));
   drivers.push(d);
@@ -116,7 +120,7 @@ setInterval(() => {
 let riderSeq = 0;
 async function rider() {
   const id = `r${String(++riderSeq).padStart(4, "0")}`;
-  const c = await TestClient.connect(`ws://127.0.0.1:${port}`, "rider", id);
+  const c = await TestClient.connect(`ws://127.0.0.1:${port}`, "rider", id, app.auth.issueToken("rider", id));
   const pickup = offsetMeters(CAIRO, rand(-AREA * 0.8, AREA * 0.8), rand(-AREA * 0.8, AREA * 0.8));
   const dropoff = offsetMeters(pickup, rand(-2500, 2500), rand(-2500, 2500));
   const types = ["eco", "eco", "eco", "comfort", "xl"];

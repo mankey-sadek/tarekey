@@ -12,6 +12,7 @@ import type { LocationService } from "../services/location/locationService.js";
 import type { DispatchService } from "../services/dispatch/dispatchService.js";
 import { TripError, type RideType, type TripService } from "../services/trip/tripService.js";
 import type { NotificationService } from "../services/notification/notificationService.js";
+import type { AuthService } from "../services/auth/authService.js";
 
 type Role = "driver" | "rider" | "monitor";
 interface Client {
@@ -31,12 +32,19 @@ export interface GatewayDeps {
   instanceId?: string;
   /** أرقام إضافية تتبعت للوحة المراقبة كل ثانية */
   monitorStats?: () => object;
+  /** بيتأكد من التوكنات (?token=…) */
+  auth?: AuthService;
+  /** لو true: الزبون والكابتن لازم توكن، و ?role&id لوحدهم مرفوضين */
+  requireAuth?: boolean;
+  /** لو متحدد: لوحة المراقبة لازم ?key=… أو توكن صالح. لو مش متحدد: المراقبة مفتوحة */
+  monitorKey?: string;
 }
 
 /**
  * WebSocket Gateway — القناة المفتوحة بين الأبلكيشن والسيرفر.
  *
- *   ws://host/ws?role=driver&id=d_123     (في الإنتاج: التوكن بيتبعت والـ id بيطلع منه)
+ *   ws://host/ws?token=<JWT>              (الـ role والـ id بيطلعوا من التوكن — شوف AuthService)
+ *   ws://host/ws?role=driver&id=d_123     (للتجربة بس، لما requireAuth = false)
  *
  * Driver → server:  location | accept | decline | arrive | start | complete | cancel
  * Rider  → server:  request_trip | cancel | rate
@@ -133,14 +141,34 @@ export class WsGateway {
     });
   }
 
+  /** مين اللي بيتصل؟ من التوكن لو موجود، أو من ?role&id لو السيرفر مش طالب توثيق */
+  private identify(url: URL): { role: Role; id: string } | { error: string } {
+    const token = url.searchParams.get("token");
+    const askedRole = url.searchParams.get("role");
+    if (token) {
+      const claims = this.deps.auth?.verifyToken(token);
+      if (!claims) return { error: "invalid or expired token" };
+      // توكن الزبون/الكابتن يفتح كمان قناة مراقبة (عشان يشوف العربيات على الخريطة)
+      return askedRole === "monitor" ? { role: "monitor", id: claims.id } : claims;
+    }
+    const id = url.searchParams.get("id") ?? "";
+    if (askedRole === "monitor") {
+      const { monitorKey } = this.deps;
+      if (monitorKey && url.searchParams.get("key") !== monitorKey) return { error: "monitor key required" };
+      return { role: "monitor", id: /^[\w-]{1,64}$/.test(id) ? id : "monitor" };
+    }
+    if (this.deps.requireAuth) return { error: "token required" };
+    if ((askedRole !== "driver" && askedRole !== "rider") || !/^[\w-]{1,64}$/.test(id)) return { error: "role and id are required" };
+    return { role: askedRole, id };
+  }
+
   private onConnection(ws: WebSocket, req: IncomingMessage) {
-    const url = new URL(req.url ?? "/", "http://localhost");
-    const role = url.searchParams.get("role") as Role | null;
-    const id = url.searchParams.get("id");
-    if ((role !== "driver" && role !== "rider" && role !== "monitor") || !id || !/^[\w-]{1,64}$/.test(id)) {
-      ws.close(4001, "role and id are required");
+    const who = this.identify(new URL(req.url ?? "/", "http://localhost"));
+    if ("error" in who) {
+      ws.close(4001, who.error);
       return;
     }
+    const { role, id } = who;
     if (role === "monitor") {
       this.monitors.add(ws);
       ws.on("close", () => this.monitors.delete(ws));
