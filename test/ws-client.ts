@@ -16,8 +16,9 @@ export class TestClient {
     });
   }
 
-  static async connect(base: string, role: "driver" | "rider", id: string) {
-    const c = new TestClient(`${base}/ws?role=${role}&id=${id}`);
+  /** token: لو السيرفر طالب توثيق (requireAuth) */
+  static async connect(base: string, role: "driver" | "rider", id: string, token?: string) {
+    const c = new TestClient(token ? `${base}/ws?token=${encodeURIComponent(token)}` : `${base}/ws?role=${role}&id=${id}`);
     await c.waitFor((m) => m.type === "hello");
     return c;
   }

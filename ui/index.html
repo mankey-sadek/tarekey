@@ -1048,6 +1048,72 @@ if (APP) document.body.classList.add("single", "app-" + APP);
 const LIVE = location.protocol.startsWith("http") && /^\/(app|rider|captain)\b/.test(location.pathname);
 function hashStr(s) { let h = 2166136261; for (const c of s) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
 
+// ---------- تسجيل الدخول: رقم الموبايل + كود تحقق (OTP) ← توكن موقّع من السيرفر ----------
+// في الوضع المباشر السيرفر بيبعت الكود (SMS) وبيرجع توكن، والـ WebSocket مابيقبلش غير التوكن.
+// في النسخة التجريبية (من غير سيرفر) الكود بيتعمل هنا وبيظهر على الشاشة.
+const tokenKey = (role) => `ft-${role}-token`;
+const mockOtp = new Map();
+const OTP_ERR = {
+  invalid_phone: "رقم الموبايل مش صحيح", too_soon: "بعتنالك كود من شوية، استخدمه أو استنى شوية واطلب تاني",
+  invalid_code: "الكود غلط، جرّب تاني", expired: "الكود خلص، ارجع واطلب كود جديد",
+  too_many_attempts: "محاولات غلط كتير، ارجع واطلب كود جديد", no_code: "ارجع واطلب كود الأول", offline: "مش قادرين نوصل للسيرفر",
+};
+async function authPost(path, body) {
+  try {
+    const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    return await r.json();
+  } catch { return { ok: false, code: "offline" }; }
+}
+async function sendOtp(phone, role) {
+  if (LIVE) return authPost("/auth/otp", { phone, role });
+  const code = String(Math.floor(Math.random() * 1e6)).padStart(6, "0");
+  mockOtp.set(role + phone, code);
+  return { ok: true, devCode: code };
+}
+async function checkOtp(phone, role, code) {
+  if (LIVE) return authPost("/auth/verify", { phone, role, code });
+  return mockOtp.get(role + phone) === code.trim() ? { ok: true, token: "mock-" + role + phone } : { ok: false, code: "invalid_code" };
+}
+/** بيقرر محتاجين كود ولا لأ (أول تسجيل، أو الرقم اتغير، أو مفيش توكن)، وبعدين يكمل */
+async function startLogin(role, prof, oldProf, st, rerender, done) {
+  if (oldProf && oldProf.phone === prof.phone && store.get(tokenKey(role))) return done();
+  st.loginErr = null;
+  const r = await sendOtp(prof.phone, role);
+  if (!r.ok && r.code !== "too_soon") { st.loginErr = OTP_ERR[r.code] || "حصلت مشكلة، جرّب تاني"; return rerender(); }
+  st.otp = { phone: prof.phone, prof, devCode: r.devCode, err: r.ok ? null : OTP_ERR.too_soon, code: "" };
+  rerender();
+}
+function otpHtml(prefix, o) {
+  return `<div class="login-logo">${LOGO_SVG(56)}<b>كود التحقق</b><span class="muted">بعتنالك كود من ٦ أرقام في رسالة على <span style="direction:ltr;display:inline-block;font-weight:700">${esc(o.phone)}</span></span></div>
+      <form id="${prefix}Otp"><label class="lbl">الكود</label><input class="input" name="code" required inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="••••••" value="${esc(o.code)}" style="direction:ltr;text-align:center;letter-spacing:8px;font-size:22px">
+      ${o.devCode ? `<div class="banner ok" data-devcode="${esc(o.devCode)}">نسخة تجريبية من غير SMS، الكود هو: <b style="direction:ltr;display:inline-block">${esc(o.devCode)}</b></div>` : ""}
+      ${o.err ? `<div class="banner err">${esc(o.err)}</div>` : ""}
+      <button class="btn" type="submit">تأكيد</button></form>
+      <div style="height:8px"></div><button class="btn ghost small" data-otp-back>تغيير الرقم</button>`;
+}
+function bindOtp(ov, prefix, role, st, rerender, done) {
+  const form = ov.querySelector(`#${prefix}Otp`), inp = form.querySelector("input");
+  inp.oninput = () => { st.otp.code = inp.value; };
+  if (st.otp.focus) { inp.focus(); inp.setSelectionRange?.(inp.value.length, inp.value.length); }
+  inp.onfocus = () => { st.otp.focus = true; }; inp.onblur = () => { st.otp.focus = false; };
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const o = st.otp, r = await checkOtp(o.phone, role, inp.value);
+    if (st.otp !== o) return;
+    if (!r.ok) { o.err = OTP_ERR[r.code] || "حصلت مشكلة، جرّب تاني"; o.code = ""; return rerender(); }
+    store.set(tokenKey(role), r.token);
+    st.otp = null;
+    done(o.prof);
+  };
+  ov.querySelector("[data-otp-back]").onclick = () => { st.otp = null; rerender(); };
+}
+/** السيرفر رفض التوكن (انتهى أو اتلغى): نرجّع شاشة الدخول */
+function onAuthLost(role) {
+  store.del(tokenKey(role));
+  if (role === "rider") { rider.profile = null; rider.otp = null; rider.view = null; riderReset(); }
+  else { if (me.online) goOnline(false); me.profile = null; me.otp = null; me.view = null; renderDriver(); renderDriverOverlay(); }
+}
+
 class LiveServer {
   constructor() {
     this.drivers = new Map(); this.clients = { rider: null, drivers: new Map() };
@@ -1059,7 +1125,9 @@ class LiveServer {
   }
   get showAll() { return document.getElementById("forceRace").checked; }
   open(role, id, onMsg) {
-    const ws = new WebSocket(`${this.base}?role=${role}&id=${id}`);
+    const tok = store.get(tokenKey(role));
+    const ws = new WebSocket(tok ? `${this.base}?token=${encodeURIComponent(tok)}` : `${this.base}?role=${role}&id=${id}`);
+    ws.addEventListener("close", (ev) => { if (ev.code === 4001 && (role === "rider" ? this.riderWs : this.driverWs) === ws) onAuthLost(role); });
     ws.onmessage = (ev) => {
       const m = JSON.parse(ev.data);
       if (m.reqId !== undefined && this.pending.has(m.reqId)) { this.pending.get(m.reqId)(m); this.pending.delete(m.reqId); return; }
@@ -1098,9 +1166,14 @@ class LiveServer {
 
   // ---------- لوحة المراقبة: أماكن كل السواقين + الأحداث ----------
   connectMonitor() {
-    const ws = new WebSocket(`${this.base}?role=monitor&id=app`);
+    // لو السيرفر قافل المراقبة، بنفتحها بتوكن الزبون أو الكابتن (عشان العربيات تبان على الخريطة)
+    const tok = store.get(tokenKey("rider")) || store.get(tokenKey("driver"));
+    const ws = new WebSocket(`${this.base}?role=monitor&id=app${tok ? `&token=${encodeURIComponent(tok)}` : ""}`);
     ws.onopen = () => log("SYS", `connected to live server ${location.host} — كل اللي هنا جاي من السيرفر الحقيقي`, "good", "gateway");
-    ws.onclose = () => { log("SYS", "lost connection to server, retrying…", "bad"); setTimeout(() => this.connectMonitor(), 1500); };
+    ws.onclose = (ev) => {
+      if (ev.code !== 4001) log("SYS", "lost connection to server, retrying…", "bad");
+      setTimeout(() => this.connectMonitor(), ev.code === 4001 ? 3000 : 1500);
+    };
     ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.type === "snapshot") this.onSnapshot(m); else if (m.type === "event") this.onEvent(m.topic, m.payload); };
   }
   onSnapshot(m) {
@@ -1272,7 +1345,8 @@ function moveWorldTo(c) {
 // =====================================================================
 const riderProfile = store.get("ft-rider");
 const rider = {
-  profile: riderProfile, id: riderProfile ? "r-" + riderProfile.phone : "r-guest",
+  // في الوضع المباشر من غير توكن لازم يدخل بالكود تاني
+  profile: LIVE && !store.get(tokenKey("rider")) ? null : riderProfile, otp: null, loginErr: null, id: riderProfile ? "r-" + riderProfile.phone : "r-guest",
   state: "home", pickup: offset(CENTER, 0, 0), pickName: "ميدان التحرير", dropoff: null, dropName: "", pickMode: "dropoff",
   type: RIDE_TYPES[0], pay: store.get("ft-pay") || "card",
   trip: null, driver: null, stars: 0, history: store.get("ft-rider-history") || [], view: null,
@@ -1492,16 +1566,24 @@ function renderRider() {
   }
 }
 function riderCancel() { if (rider.trip?.id) server.cancel(rider.trip.id, "rider", rider.id); }
+function finishRiderLogin(prof) {
+  rider.profile = prof; rider.id = "r-" + prof.phone; store.set("ft-rider", prof); rider.view = null;
+  if (LIVE) server.loginRider(rider.id, prof);
+  renderRider(); if (!rider.pickFromGps) useMyLocation();
+}
 function riderReset() { rider.state = "home"; rider.dropoff = null; rider.trip = null; rider.driver = null; rider.stars = 0; rider.pickMode = "dropoff"; renderRider(); }
 
 // ---------- شاشات الزبون الإضافية: تسجيل الدخول، القايمة، رحلاتي، المحفظة، الحساب ----------
 function renderRiderOverlay() {
   const drawer = document.getElementById("riderDrawer"), ov = document.getElementById("riderOverlay");
   drawer.innerHTML = ""; ov.innerHTML = "";
-  if (!rider.profile || rider.view === "editProfile") {
-    const p = rider.profile || {};
+  if (rider.otp) {
+    ov.innerHTML = otpHtml("r", rider.otp);
+    bindOtp(ov, "r", "rider", rider, renderRiderOverlay, finishRiderLogin);
+  } else if (!rider.profile || rider.view === "editProfile") {
+    const p = rider.profile || store.get("ft-rider") || {};
     ov.innerHTML = `${rider.profile ? `<div class="ohead"><button class="back" data-close>›</button><h3>تعديل الحساب</h3></div>` : `<div class="login-logo">${LOGO_SVG(64)}<b>في طريقك</b><span class="muted">أهلاً بيك! سجّل عشان تطلب أول رحلة</span></div>`}
-      <form id="rLogin"><label class="lbl">الاسم</label><input class="input" name="name" required maxlength="30" placeholder="مثلاً: محمود سادات" value="${esc(p.name)}">
+      ${rider.loginErr ? `<div class="banner err">${esc(rider.loginErr)}</div>` : ""}<form id="rLogin"><label class="lbl">الاسم</label><input class="input" name="name" required maxlength="30" placeholder="مثلاً: محمود سادات" value="${esc(p.name)}">
       <label class="lbl">رقم الموبايل</label><input class="input" name="phone" required inputmode="numeric" pattern="01[0-9]{9}" maxlength="11" placeholder="01xxxxxxxxx" value="${esc(p.phone)}" style="direction:ltr;text-align:right">
       <button class="btn" type="submit">${rider.profile ? "حفظ" : "يلا بينا"}</button></form>
       ${rider.profile ? "" : `<p class="muted" style="text-align:center;margin-top:14px">بالتسجيل إنت موافق على شروط الاستخدام وسياسة الخصوصية</p>`}`;
@@ -1510,9 +1592,7 @@ function renderRiderOverlay() {
       const f = new FormData(e.target);
       const prof = { name: String(f.get("name")).trim(), phone: String(f.get("phone")).trim() };
       if (!prof.name) return;
-      rider.profile = prof; rider.id = "r-" + prof.phone; store.set("ft-rider", prof); rider.view = null;
-      if (LIVE) server.loginRider(rider.id, prof);
-      renderRider(); if (!rider.pickFromGps) useMyLocation();
+      startLogin("rider", prof, rider.profile, rider, renderRiderOverlay, () => finishRiderLogin(prof));
     };
   } else if (rider.view === "menu") {
     drawer.innerHTML = `<div class="drawer-bg" data-close></div><div class="drawer">
@@ -1547,7 +1627,7 @@ function renderRiderOverlay() {
   const close = () => { rider.view = null; renderRiderOverlay(); };
   [...drawer.querySelectorAll("[data-close]"), ...ov.querySelectorAll("[data-close]")].forEach((b) => b.onclick = close);
   drawer.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => {
-    if (b.dataset.go === "logout") { store.del("ft-rider"); rider.profile = null; rider.view = null; riderReset(); return; }
+    if (b.dataset.go === "logout") { store.del("ft-rider"); store.del(tokenKey("rider")); if (LIVE && server.riderWs) { server.riderWs.close(); server.riderWs = null; } rider.profile = null; rider.view = null; riderReset(); return; }
     rider.view = b.dataset.go; renderRiderOverlay();
   });
 }
@@ -1555,9 +1635,10 @@ function renderRiderOverlay() {
 // =====================================================================
 //  تطبيق الكابتن (إنت)
 // =====================================================================
-const driverProfile = store.get("ft-driver");
+const driverProfileSaved = store.get("ft-driver");
+const driverProfile = LIVE && !store.get(tokenKey("driver")) ? null : driverProfileSaved;
 const me = {
-  profile: driverProfile, id: driverProfile ? "d-" + driverProfile.phone : "d-me", online: false, pos: offset(CENTER, 520, -380), heading: 0,
+  profile: driverProfile, otp: null, loginErr: null, id: driverProfile ? "d-" + driverProfile.phone : "d-me", online: false, pos: offset(CENTER, 520, -380), heading: 0,
   meta: driverProfile ? { name: driverProfile.name, car: driverProfile.car, plate: driverProfile.plate, baseRating: 4.93 } : { name: "كابتن", car: "تويوتا كورولا", plate: "م ش ر ١٨١١", baseRating: 4.93 },
   state: "offline", offer: null, offerLeft: 0, trip: null, banner: null,
   history: store.get("ft-driver-history") || [], sent: 0, view: null,
@@ -1695,13 +1776,25 @@ function renderDriver() {
 }
 
 // ---------- شاشات الكابتن الإضافية: التسجيل، القايمة، الأرباح، رحلاتي، البروفايل ----------
+function finishDriverLogin(prof) {
+  if (me.online) goOnline(false);
+  server.clients.drivers.delete(me.id);
+  if (LIVE) server.disconnect(me.id); // الاتصال الجاي يتفتح بالتوكن الجديد
+  me.profile = prof; me.id = "d-" + prof.phone; me.meta = { ...me.meta, name: prof.name, car: prof.car, plate: prof.plate };
+  server.clients.drivers.set(me.id, (m) => meOnMsg(m));
+  store.set("ft-driver", prof); me.view = null; renderDriver(); renderDriverOverlay();
+  if (APP === "driver") startGps();
+}
 function renderDriverOverlay() {
   const drawer = document.getElementById("driverDrawer"), ov = document.getElementById("driverOverlay");
   drawer.innerHTML = ""; ov.innerHTML = "";
-  if (!me.profile || me.view === "editProfile") {
-    const p = me.profile || {};
+  if (me.otp) {
+    ov.innerHTML = otpHtml("d", me.otp);
+    bindOtp(ov, "d", "driver", me, renderDriverOverlay, finishDriverLogin);
+  } else if (!me.profile || me.view === "editProfile") {
+    const p = me.profile || driverProfileSaved || {};
     ov.innerHTML = `${me.profile ? `<div class="ohead"><button class="back" data-close>›</button><h3>تعديل البيانات</h3></div>` : `<div class="login-logo">${LOGO_SVG(56)}<b>في طريقك — كابتن</b><span class="muted">سجّل بياناتك وبيانات عربيتك</span></div>`}
-      <form id="dLogin"><label class="lbl">الاسم</label><input class="input" name="name" required maxlength="30" placeholder="الاسم زي البطاقة" value="${esc(p.name)}">
+      ${me.loginErr ? `<div class="banner err">${esc(me.loginErr)}</div>` : ""}<form id="dLogin"><label class="lbl">الاسم</label><input class="input" name="name" required maxlength="30" placeholder="الاسم زي البطاقة" value="${esc(p.name)}">
       <label class="lbl">رقم الموبايل</label><input class="input" name="phone" required inputmode="numeric" pattern="01[0-9]{9}" maxlength="11" placeholder="01xxxxxxxxx" value="${esc(p.phone)}" style="direction:ltr;text-align:right">
       <label class="lbl">العربية</label><select class="input" name="car">${CARS.map((c) => `<option ${c === p.car ? "selected" : ""}>${c}</option>`).join("")}</select>
       <label class="lbl">النمرة</label><input class="input" name="plate" required maxlength="14" placeholder="مثلاً: م ش ر ١٨١١" value="${esc(p.plate)}">
@@ -1710,12 +1803,7 @@ function renderDriverOverlay() {
       e.preventDefault();
       const f = new FormData(e.target);
       const prof = { name: String(f.get("name")).trim(), phone: String(f.get("phone")).trim(), car: String(f.get("car")), plate: String(f.get("plate")).trim() };
-      if (me.online) goOnline(false);
-      server.clients.drivers.delete(me.id);
-      me.profile = prof; me.id = "d-" + prof.phone; me.meta = { ...me.meta, name: prof.name, car: prof.car, plate: prof.plate };
-      server.clients.drivers.set(me.id, (m) => meOnMsg(m));
-      store.set("ft-driver", prof); me.view = null; renderDriver(); renderDriverOverlay();
-      if (APP === "driver") startGps();
+      startLogin("driver", prof, me.profile, me, renderDriverOverlay, () => finishDriverLogin(prof));
     };
   } else if (me.view === "menu") {
     drawer.innerHTML = `<div class="drawer-bg" data-close></div><div class="drawer">
@@ -1747,7 +1835,7 @@ function renderDriverOverlay() {
   const close = () => { me.view = null; renderDriverOverlay(); };
   [...drawer.querySelectorAll("[data-close]"), ...ov.querySelectorAll("[data-close]")].forEach((b) => b.onclick = close);
   drawer.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => {
-    if (b.dataset.go === "logout") { if (me.online) goOnline(false); store.del("ft-driver"); me.profile = null; me.view = null; renderDriver(); renderDriverOverlay(); return; }
+    if (b.dataset.go === "logout") { if (me.online) goOnline(false); store.del("ft-driver"); store.del(tokenKey("driver")); me.profile = null; me.view = null; renderDriver(); renderDriverOverlay(); return; }
     me.view = b.dataset.go; renderDriverOverlay();
   });
 }

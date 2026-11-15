@@ -10,7 +10,8 @@ const TAHRIR = { latitude: 30.0444, longitude: 31.2357 };
 let app: App, port: number, browser: Browser;
 
 before(async () => {
-  app = createApp({});
+  // التوثيق شغال زي الإنتاج، والكود بيرجع في الرد بدل الـ SMS
+  app = createApp({ requireAuth: true, auth: { exposeDevCode: true } });
   port = await app.listen(0);
   browser = await chromium.launch();
 });
@@ -34,16 +35,26 @@ async function open(path: string) {
   return { page, errors, close: () => ctx.close() };
 }
 
+/** شاشة كود التحقق: بنقرا الكود التجريبي اللي ظاهر ونكتبه */
+async function enterOtp(p: Page, prefix: "r" | "d") {
+  const code = await p.locator("[data-devcode]").getAttribute("data-devcode", { timeout: 5_000 });
+  assert.match(code ?? "", /^\d{6}$/);
+  await p.fill(`#${prefix}Otp [name=code]`, code!);
+  await p.click(`#${prefix}Otp button[type=submit]`);
+  await p.locator(`#${prefix}Otp`).waitFor({ state: "detached" });
+}
 async function riderLogin(r: Page, phone: string) {
   await r.fill("#rLogin [name=name]", "زبون تست");
   await r.fill("#rLogin [name=phone]", phone);
   await r.click("#rLogin button[type=submit]");
+  await enterOtp(r, "r");
 }
 async function captainLogin(d: Page, phone: string) {
   await d.fill("#dLogin [name=name]", "كابتن تست");
   await d.fill("#dLogin [name=phone]", phone);
   await d.fill("#dLogin [name=plate]", "أ ب ج ١٢٣");
   await d.click("#dLogin button[type=submit]");
+  await enterOtp(d, "d");
 }
 /** يختار أول مكان من نتايج البحث (أول عنصر هو «استخدم مكاني الحالي») ويطلب */
 async function requestRide(r: Page) {
@@ -142,6 +153,36 @@ test("الكابتن الوحيد يرفض، فالزبون يعرف إن مفي
   assert.match(await r.page.locator("#riderSheet").innerText(), /مفيش كباتن قريبين/);
   assert.deepEqual([...d.errors, ...r.errors], []);
   await d.close();
+  await r.close();
+});
+
+test("تسجيل الدخول: كود غلط يترفض، والصح يدخّل، والتوكن بيفضل بعد الـ refresh", { timeout: 30_000 }, async () => {
+  const r = await open("/rider");
+  await r.page.fill("#rLogin [name=name]", "زبون تست");
+  await r.page.fill("#rLogin [name=phone]", "01055555555");
+  await r.page.click("#rLogin button[type=submit]");
+  const code = (await r.page.locator("[data-devcode]").getAttribute("data-devcode"))!;
+  await r.page.fill("#rOtp [name=code]", code === "000000" ? "111111" : "000000");
+  await r.page.click("#rOtp button[type=submit]");
+  await r.page.locator("#rOtp .banner.err").waitFor();
+  assert.match(await r.page.locator("#rOtp .banner.err").innerText(), /الكود غلط/);
+
+  await r.page.fill("#rOtp [name=code]", code);
+  await r.page.click("#rOtp button[type=submit]");
+  await r.page.locator("#rOtp").waitFor({ state: "detached" });
+  const token = await r.page.evaluate(() => JSON.parse(localStorage.getItem("ft-rider-token") ?? "null"));
+  assert.deepEqual(app.auth.verifyToken(token), { role: "rider", id: "r-01055555555" });
+
+  // بعد الـ refresh يفضل داخل من غير كود
+  await r.page.reload();
+  await r.page.waitForSelector("#rResults");
+  assert.equal(await r.page.locator("#rLogin").count(), 0);
+
+  // لو التوكن بقى مش صالح، السيرفر بيقفل الاتصال والتطبيق يرجّع شاشة الدخول
+  await r.page.evaluate(() => localStorage.setItem("ft-rider-token", JSON.stringify("bad.token.x")));
+  await r.page.reload();
+  await r.page.waitForSelector("#rLogin", { timeout: 5_000 });
+  assert.deepEqual(r.errors, []);
   await r.close();
 });
 

@@ -13,7 +13,7 @@ const RIDERS = 5;
 const c = { dim: "\x1b[2m", g: "\x1b[32m", r: "\x1b[31m", y: "\x1b[33m", b: "\x1b[36m", m: "\x1b[35m", x: "\x1b[0m" };
 const log = (tag: string, color: string, msg: string) => console.log(`${c.dim}${new Date().toISOString().slice(11, 23)}${c.x} ${color}${tag.padEnd(7)}${c.x} ${msg}`);
 
-const app = createApp({ location: { minUpdateIntervalMs: 0 }, dispatch: { fanout: 3, offerTtlMs: 4000 } });
+const app = createApp({ location: { minUpdateIntervalMs: 0 }, dispatch: { fanout: 3, offerTtlMs: 4000 }, requireAuth: true });
 const port = await app.listen(Number(process.env.PORT ?? 0));
 const base = `ws://127.0.0.1:${port}`;
 log("SERVER", c.b, `listening on ${port} — UI: http://localhost:${port}/`);
@@ -27,7 +27,7 @@ interface SimDriver { id: string; ws: TestClient; pos: { lat: number; lng: numbe
 const drivers: SimDriver[] = [];
 for (let i = 0; i < DRIVERS; i++) {
   const id = `d${String(i).padStart(2, "0")}`;
-  const ws = await TestClient.connect(base, "driver", id);
+  const ws = await TestClient.connect(base, "driver", id, app.auth.issueToken("driver", id));
   const d: SimDriver = { id, ws, pos: offsetMeters(CAIRO, (Math.random() - 0.5) * 6000, (Math.random() - 0.5) * 6000), busy: false };
   drivers.push(d);
   ws.ws.on("message", (raw) => onDriverMsg(d, JSON.parse(raw.toString())));
@@ -74,7 +74,7 @@ async function drive(d: SimDriver, offer: any) {
 // ---------- الزباين ----------
 await Promise.all(
   Array.from({ length: RIDERS }, async (_, i) => {
-    const rider = await TestClient.connect(base, "rider", `r${i}`);
+    const rider = await TestClient.connect(base, "rider", `r${i}`, app.auth.issueToken("rider", `r${i}`));
     await sleep(i * 300);
     const pickup = offsetMeters(CAIRO, (Math.random() - 0.5) * 4000, (Math.random() - 0.5) * 4000);
     const dropoff = offsetMeters(pickup, (Math.random() - 0.5) * 8000, (Math.random() - 0.5) * 8000);
