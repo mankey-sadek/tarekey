@@ -1,0 +1,35 @@
+# بيشغل كل الاختبارات مع كل Pull Request (ومع أي push على فرع غير main)
+# عشان أي تعديل يبوّظ حاجة يبان قبل ما يتدمج
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - name: اختبارات السيرفر (unit + e2e على WebSocket)
+        run: npm test
+      - name: تنزيل Chromium
+        run: npx playwright install --with-deps chromium
+      - name: اختبارات الشاشات (رحلة كاملة في متصفح حقيقي)
+        run: npm run test:ui
