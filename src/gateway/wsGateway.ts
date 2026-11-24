@@ -29,6 +29,8 @@ export interface GatewayDeps {
   notifications: NotificationService;
   /** اسم النسخة — كل نسخة gateway بتشترك في الطابور بـ group خاص بيها */
   instanceId?: string;
+  /** صافي الكابتن من رحلة (من خدمة الحسابات) — بيظهر في تاريخ رحلات الكابتن */
+  driverEarning?: (driverId: string, tripId: string) => number | undefined;
   /** أرقام إضافية تتبعت للوحة المراقبة كل ثانية */
   monitorStats?: () => object;
 }
@@ -38,8 +40,8 @@ export interface GatewayDeps {
  *
  *   ws://host/ws?role=driver&id=d_123     (في الإنتاج: التوكن بيتبعت والـ id بيطلع منه)
  *
- * Driver → server:  location | accept | decline | arrive | start | complete | cancel
- * Rider  → server:  request_trip | cancel | rate
+ * Driver → server:  location | accept | decline | arrive | start | complete | cancel | history
+ * Rider  → server:  request_trip | cancel | rate | history | check_promo
  * Server → client:  hello | trip_offer | offer_withdrawn | trip_update | notification | earning | ack | error
  *
  * الـ gateway مابيعملش أي business logic: بيترجم الرسايل لنداءات على الخدمات،
@@ -218,6 +220,8 @@ export class WsGateway {
         return { trip: await trips.complete(String(msg.tripId), driverId) };
       case "cancel":
         return { trip: await trips.cancel(String(msg.tripId), "driver", driverId) };
+      case "history":
+        return this.history("driver", driverId, msg);
       default:
         throw new TripError("bad_request", `unknown message type ${msg.type}`);
     }
@@ -230,19 +234,42 @@ export class WsGateway {
         if (!isValidLatLng(msg.pickup) || !isValidLatLng(msg.dropoff)) {
           throw new TripError("bad_request", "pickup and dropoff must be {lat,lng}");
         }
-        const trip = await trips.requestTrip(riderId, msg.pickup, msg.dropoff, (msg.rideType ?? "eco") as RideType);
-        const label = (v: unknown) => (typeof v === "string" ? v.slice(0, 60) : undefined);
-        this.tripLabels.set(trip.id, { pickupName: label(msg.pickupName), dropoffName: label(msg.dropoffName) });
+        const trip = await trips.requestTrip(riderId, msg.pickup, msg.dropoff, (msg.rideType ?? "eco") as RideType, {
+          pickupName: msg.pickupName,
+          dropoffName: msg.dropoffName,
+          promoCode: typeof msg.promoCode === "string" && msg.promoCode.trim() ? msg.promoCode : undefined,
+        });
+        this.tripLabels.set(trip.id, { pickupName: trip.pickupName, dropoffName: trip.dropoffName });
         return { trip };
+      }
+      case "check_promo": {
+        const p = await trips.checkPromo(riderId, String(msg.code ?? ""));
+        return { promo: { code: p.code, percent: p.percent, maxCents: p.maxCents, label: p.label } };
       }
       case "cancel":
         return { trip: await trips.cancel(String(msg.tripId), "rider", riderId) };
       case "rate":
         await trips.rate(String(msg.tripId), riderId, Number(msg.stars), msg.comment);
         return {};
+      case "history":
+        return this.history("rider", riderId, msg);
       default:
         throw new TripError("bad_request", `unknown message type ${msg.type}`);
     }
+  }
+
+  /** تاريخ الرحلات + بيانات العرض (اسم الكابتن وعربيته، اسم الزبون، صافي الكابتن) */
+  private async history(role: "rider" | "driver", userId: string, msg: any) {
+    const limit = Number.isFinite(+msg.limit) ? +msg.limit : 20;
+    const before = Number.isFinite(+msg.before) && msg.before != null ? +msg.before : undefined;
+    const list = await this.deps.trips.history(role, userId, { limit, before });
+    const trips = list.map((t) => ({
+      ...t,
+      driverProfile: t.driverId ? this.profiles.get(`driver:${t.driverId}`) ?? null : null,
+      riderName: this.profiles.get(`rider:${t.riderId}`)?.name ?? null,
+      ...(role === "driver" && t.driverId ? { netCents: this.deps.driverEarning?.(t.driverId, t.id) ?? null } : {}),
+    }));
+    return { trips, hasMore: trips.length === Math.min(Math.max(1, limit), 100) };
   }
 
   private broadcast(msg: object) {

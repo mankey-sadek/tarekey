@@ -145,6 +145,98 @@ test("الكابتن الوحيد يرفض، فالزبون يعرف إن مفي
   await r.close();
 });
 
+/** الكابتن يدوس وصلت ← ابدأ ← إنهاء لحد ما الزبون يوصل لشاشة التقييم */
+async function driveToEnd(d: Page, r: Page) {
+  for (let i = 0; i < 100 && !(await r.locator("#rRate").count()); i++) {
+    const btn = d.locator("#dAct");
+    if ((await btn.count()) && (await btn.isEnabled())) await btn.click();
+    await d.waitForTimeout(300);
+  }
+}
+
+test("كود خصم + تاريخ الرحلات وتفاصيلها والتقييم المتأخر للزبون والكابتن", { timeout: 90_000 }, async () => {
+  const d = await open("/captain");
+  const r = await open("/rider");
+  await captainLogin(d.page, "01444444444");
+  await d.page.click("#dOnline");
+  await riderLogin(r.page, "01000000004");
+
+  // المحفظة: شحن + تفعيل كود خصم (كود غلط الأول)
+  await r.page.click("#rMenu");
+  await r.page.click('[data-go="wallet"]');
+  await r.page.click('[data-top="5000"]');
+  assert.match(await r.page.locator("#wBal").innerText(), /200\.00/);
+  await r.page.fill("#promo [name=code]", "ghalat");
+  await r.page.click("#promo button");
+  await r.page.waitForFunction(() => /مش موجود/.test(document.querySelector("#promoMsg")?.textContent ?? ""));
+  await r.page.fill("#promo [name=code]", "fitari2ak");
+  await r.page.click("#promo button");
+  await r.page.waitForSelector("#promoDel");
+  await r.page.click("#riderOverlay [data-close]");
+
+  // الأسعار بتظهر بالخصم، والرحلة بتتطلب بالكود
+  await r.page.locator("#rResults > *").nth(2).click();
+  assert.ok(await r.page.locator("#riderSheet .strike").count());
+  await r.page.click("#rReq");
+  await d.page.waitForSelector("#dAccept", { timeout: 10_000 });
+  await d.page.click("#dAccept");
+  await driveToEnd(d.page, r.page);
+  await r.page.click("#rSkip"); // هيقيّم بعدين
+
+  const trip = (await app.trips.history("rider", "r-01000000004"))[0];
+  assert.equal(trip.status, "completed");
+  assert.equal(trip.promoCode, "FITARI2AK");
+  assert.ok(trip.discountCents! > 0);
+
+  // رحلاتي: الرحلة موجودة، وندخل على التفاصيل ونقيّم منها
+  await r.page.click("#rMenu");
+  await r.page.click('[data-go="history"]');
+  await r.page.waitForSelector(`[data-h="${trip.id}"]`);
+  assert.match(await r.page.locator("#riderOverlay").innerText(), /قيّم/);
+  await r.page.click(`[data-h="${trip.id}"]`);
+  const detail = await r.page.locator("#riderOverlay").innerText();
+  assert.match(detail, /خصم FITARI2AK/);
+  assert.match(detail, /كابتن تست/);
+  await r.page.click('#riderOverlay [data-s="4"]');
+  await waitUntil(() => app.ratings.average("d-01444444444") === 4);
+  // الفلتر: مفيش رحلات ملغية
+  await r.page.click("#riderOverlay [data-tohist]");
+  await r.page.click('[data-f="cancelled"]');
+  assert.match(await r.page.locator("#riderOverlay").innerText(), /مفيش رحلات هنا/);
+  await r.page.click('[data-f="all"]');
+
+  // اطلب نفس الرحلة تاني ← شاشة اختيار العربية بنفس الوجهة
+  await r.page.click(`[data-h="${trip.id}"]`);
+  await r.page.click("#rRepeat");
+  await r.page.waitForSelector("#rReq");
+  assert.equal(await r.page.locator("#riderSheet .strike").count(), 0, "الكود اتستخدم خلاص");
+
+  // المساعدة: نبعت شكوى عن الرحلة
+  await r.page.click("#rMenu");
+  await r.page.click('[data-go="help"]');
+  await r.page.click('[data-topic="lost"]');
+  await r.page.fill("#ticket [name=body]", "نسيت شنطتي");
+  await r.page.click("#ticket button");
+  await r.page.waitForFunction(() => /بنراجعها/.test(document.querySelector("#riderOverlay")?.textContent ?? ""));
+
+  // الكابتن: رحلاتي فيها الرحلة بالصافي، والأرباح فيها تبويب الأسبوع
+  await d.page.click("#dMenu");
+  await d.page.click('[data-go="history"]');
+  await d.page.waitForSelector(`[data-h="${trip.id}"]`);
+  await d.page.click(`[data-h="${trip.id}"]`);
+  const net = trip.fareCents! - Math.round(trip.fareCents! * 0.2);
+  await d.page.waitForFunction((n) => document.querySelector("#driverOverlay")?.textContent?.includes(n), (net / 100).toFixed(2));
+  await d.page.click("#driverOverlay [data-tohist]");
+  await d.page.click("#driverOverlay [data-close]");
+  await d.page.click("#dEarn");
+  await d.page.click('[data-tab="week"]');
+  assert.match(await d.page.locator("#driverOverlay").innerText(), /نسبة القبول\s*١٠٠٪/);
+
+  assert.deepEqual([...d.errors, ...r.errors], []);
+  await d.close();
+  await r.close();
+});
+
 async function waitUntil(fn: () => boolean, ms = 3000) {
   const end = Date.now() + ms;
   while (!fn()) {

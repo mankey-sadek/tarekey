@@ -64,6 +64,14 @@ export interface Trip {
   fareCents: number | null;
   rideType?: string;
   cancelledBy: "rider" | "driver" | "system" | null;
+  /** أسماء الأماكن زي ما الزبون اختارها — للعرض في تاريخ الرحلات والإيصال */
+  pickupName?: string;
+  dropoffName?: string;
+  /** كود الخصم اللي اتستخدم، وقيمة الخصم (الأجرة fareCents هي اللي الزبون بيدفعها بعد الخصم) */
+  promoCode?: string | null;
+  discountCents?: number;
+  /** تقييم الزبون للكابتن (١..٥) — null لحد ما يقيّم */
+  riderStars?: number | null;
   createdAt: number;
   updatedAt: number;
 }

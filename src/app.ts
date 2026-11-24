@@ -33,6 +33,7 @@ export function createApp(opts: AppOptions = {}) {
   const ratings = new RatingService(bus).start();
   const gateway = new WsGateway({
     bus, location, dispatch, trips, notifications,
+    driverEarning: (driverId, tripId) => accounting.earningFor(driverId, tripId),
     monitorStats: () => ({
       platformRevenueCents: accounting.balance("platform:revenue"),
       ledgerEntries: accounting.ledger.length,

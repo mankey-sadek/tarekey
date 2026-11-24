@@ -28,6 +28,18 @@ export interface TripRepository {
     expected: CasCondition,
     patch: Partial<Omit<Trip, "id" | "version">>,
   ): Promise<Trip | null>;
+  /**
+   * تاريخ رحلات زبون أو كابتن، الأحدث الأول.
+   *   SELECT * FROM trips WHERE rider_id = $1 AND created_at < $before ORDER BY created_at DESC LIMIT $limit
+   * (index على (rider_id, created_at) و (driver_id, created_at))
+   */
+  listByUser(role: "rider" | "driver", userId: string, opts?: HistoryQuery): Promise<Trip[]>;
+}
+
+export interface HistoryQuery {
+  limit?: number;
+  /** للصفحة اللي بعدها: هات الرحلات اللي اتعملت قبل الوقت ده */
+  before?: number;
 }
 
 export interface InMemoryRepoOptions {
@@ -37,6 +49,8 @@ export interface InMemoryRepoOptions {
 
 export class InMemoryTripRepository implements TripRepository {
   private readonly trips = new Map<string, Trip>();
+  /** فهرس بسيط زي الـ index في قاعدة البيانات: `rider:<id>` / `driver:<id>` → أرقام الرحلات بالترتيب */
+  private readonly byUser = new Map<string, string[]>();
   private readonly latency: () => number;
 
   constructor(opts: InMemoryRepoOptions = {}) {
@@ -52,6 +66,26 @@ export class InMemoryTripRepository implements TripRepository {
     await this.delay();
     if (this.trips.has(trip.id)) throw new Error(`Trip ${trip.id} already exists`);
     this.trips.set(trip.id, { ...trip });
+    this.index(`rider:${trip.riderId}`, trip.id);
+    if (trip.driverId) this.index(`driver:${trip.driverId}`, trip.id);
+  }
+
+  private index(key: string, tripId: string) {
+    const list = this.byUser.get(key);
+    if (!list) this.byUser.set(key, [tripId]);
+    else if (!list.includes(tripId)) list.push(tripId);
+  }
+
+  async listByUser(role: "rider" | "driver", userId: string, opts: HistoryQuery = {}): Promise<Trip[]> {
+    await this.delay();
+    const limit = Math.min(Math.max(1, opts.limit ?? 20), 100);
+    const ids = this.byUser.get(`${role}:${userId}`) ?? [];
+    return ids
+      .map((id) => this.trips.get(id)!)
+      .filter((t) => opts.before === undefined || t.createdAt < opts.before)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit)
+      .map((t) => structuredClone(t));
   }
 
   async get(id: string): Promise<Trip | undefined> {
@@ -80,6 +114,7 @@ export class InMemoryTripRepository implements TripRepository {
       updatedAt: Date.now(),
     };
     this.trips.set(id, updated);
+    if (updated.driverId) this.index(`driver:${updated.driverId}`, id);
     return structuredClone(updated);
   }
 }
