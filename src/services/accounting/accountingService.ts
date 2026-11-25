@@ -41,6 +41,11 @@ export class AccountingService {
     return this;
   }
 
+  /** صافي الكابتن من رحلة معينة (بعد العمولة) — undefined لو الدفع لسه ماتمش */
+  earningFor(driverId: string, tripId: string): number | undefined {
+    return this.ledger.find((l) => l.tripId === tripId && l.account === `driver:${driverId}`)?.amountCents;
+  }
+
   balance(account: string): number {
     return this.ledger.filter((l) => l.account === account).reduce((s, l) => s + l.amountCents, 0);
   }

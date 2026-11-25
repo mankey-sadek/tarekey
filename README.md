@@ -164,11 +164,18 @@ requested ──accept──▶ accepted ──arrive──▶ driver_arrived �
 
 | من | الرسالة |
 |---|---|
-| الكابتن ← السيرفر | `location` · `accept` · `decline` · `arrive` · `start` · `complete` · `cancel` |
-| الزبون ← السيرفر | `request_trip {pickup, dropoff, rideType}` · `cancel` · `rate {stars}` |
+| الكابتن ← السيرفر | `location` · `accept` · `decline` · `arrive` · `start` · `complete` · `cancel` · `history {limit, before}` |
+| الزبون ← السيرفر | `request_trip {pickup, dropoff, rideType, pickupName, dropoffName, promoCode}` · `cancel` · `rate {stars}` · `history {limit, before}` · `check_promo {code}` |
 | السيرفر ← الاتنين | `hello` · `trip_offer` · `offer_withdrawn` · `trip_update` · `notification` · `earning` · `ack` · `error` |
 
 أي رسالة فيها `reqId` بيرجع ردها بنفس الـ `reqId`.
+
+### تاريخ الرحلات وأكواد الخصم
+
+- `history` بترجع رحلات الزبون (أو الرحلات اللي اتعينت للكابتن) الأحدث الأول، ومعاها أسامي الأماكن وبيانات الكابتن واسم الزبون والتقييم. الكابتن بياخد كمان `netCents` (صافيه بعد العمولة من خدمة الحسابات). للصفحة اللي بعدها ابعت `before` = `createdAt` بتاع آخر رحلة.
+- التقييم بيتحفظ على الرحلة (`riderStars`) بـ Conditional Update، فمينفعش تتقيّم مرتين.
+- أكواد الخصم: `FITARI2AK` (٢٠٪ لحد ٣٠ ج.م) و `WELCOME50` (٥٠٪ لحد ٥٠ ج.م، لأول رحلة بس). كل زبون يستخدم الكود مرة واحدة، و`fareCents` هي اللي الزبون بيدفعها بعد الخصم (`discountCents`).
+- في التطبيق: «رحلاتي» فيها فلتر (الكل/مكتملة/ملغية) وتفاصيل كل رحلة بالإيصال، تقييم متأخر، «اطلب نفس الرحلة تاني»، ومشاركة الإيصال. المحفظة رصيدها حقيقي (بيقل لما تدفع منها، وفيها شحن تجريبي). المساعدة بتبعت طلب دعم مربوط برحلة، وفيها أرقام الطوارئ. الكابتن عنده تاريخ فيه الرحلات الملغية، أرباح النهاردة وآخر ٧ أيام، ونسبة قبول محسوبة فعلاً.
 
 ## نتايج اختبار الحمل (5,000 سواق)
 

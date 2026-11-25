@@ -137,6 +137,24 @@
   .bars-l{display:flex;gap:6px;direction:ltr;font-size:10.5px;color:var(--muted)}
   .bars-l span{flex:1;text-align:center}
   .pill.btnish{cursor:pointer}
+  .chips{display:flex;gap:6px;margin:0 0 10px;overflow-x:auto}
+  .chip{padding:7px 14px;border-radius:99px;border:1px solid var(--line);background:var(--panel2);font-size:13.5px;cursor:pointer;white-space:nowrap}
+  .chip.sel{background:var(--accent);border-color:var(--accent);color:#04120a;font-weight:800}
+  .hday{font-size:12.5px;color:var(--muted);margin:14px 2px 2px;font-weight:700}
+  .lrow.tap{cursor:pointer}
+  .lrow.tap:hover{background:var(--panel2)}
+  .tl{position:relative;padding-inline-start:22px;margin:8px 0 12px}
+  .tl::before{content:"";position:absolute;inset-inline-start:6px;top:12px;bottom:12px;width:2px;background:var(--line)}
+  .tl div{position:relative;padding:6px 0}
+  .tl div::before{content:"";position:absolute;inset-inline-start:-20px;top:11px;width:10px;height:10px;border-radius:50%;background:var(--accent)}
+  .tl div.to::before{background:#fff;border-radius:2px}
+  .strike{text-decoration:line-through;color:var(--muted);font-weight:400;font-size:12.5px;margin-inline-end:4px}
+  .tag{display:inline-block;font-size:11.5px;padding:2px 8px;border-radius:99px;background:var(--panel2);border:1px solid var(--line)}
+  .tag.ok{color:#86efac;border-color:rgba(34,197,94,.4)}
+  .tag.err{color:#fca5a5;border-color:rgba(239,68,68,.4)}
+  .sum{display:flex;justify-content:space-between;background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:10px 14px;margin-bottom:10px}
+  .sum b{display:block;font-size:17px}
+  textarea.input{min-height:90px;resize:vertical}
   .navbar{display:flex;align-items:center;gap:12px;background:#1d4ed8;color:#fff;border-radius:14px;padding:10px 14px;margin:2px 0 8px}
   .navbar .ti{font-size:26px} .navbar b{font-size:17px} .navbar div div{font-size:13px;opacity:.92}
   .search{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:0 12px;margin:2px 0 4px}
@@ -186,7 +204,7 @@
     .tabs{display:flex}
     main{padding:12px}
     .col.hide-m{display:none}
-    .phone{width:min(360px,100%)}
+    .phone{width:min(360px,calc(100vw - 24px))}
   }
 </style>
 </head>
@@ -439,9 +457,36 @@ const timeAgo = (t) => {
   const d = new Date(t), today = new Date().toDateString() === d.toDateString();
   return (today ? "النهاردة " : d.toLocaleDateString("ar-EG", { weekday: "short", day: "numeric", month: "short" }) + " ") + d.toLocaleTimeString("ar-EG", { hour: "numeric", minute: "2-digit" });
 };
+const clock = (t) => new Date(t).toLocaleTimeString("ar-EG", { hour: "numeric", minute: "2-digit" });
+function dayLabel(t) {
+  const d = new Date(t), now = new Date(), y = new Date(now); y.setDate(now.getDate() - 1);
+  if (d.toDateString() === now.toDateString()) return "النهاردة";
+  if (d.toDateString() === y.toDateString()) return "امبارح";
+  return d.toLocaleDateString("ar-EG", { weekday: "long", day: "numeric", month: "long" });
+}
+/** لستة مجمعة باليوم: عنوان لكل يوم وتحته رحلاته */
+const byDay = (list, row) => { let last = ""; return list.map((h) => { const d = dayLabel(h.at), head = d !== last ? `<div class="hday">${d}</div>` : ""; last = d; return head + row(h); }).join(""); };
+const startOfWeek = () => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - 6); return d.getTime(); };
+/** يدمج التاريخ اللي على الموبايل مع اللي على السيرفر (السيرفر هو المرجع للحالة والأجرة والتقييم) */
+function mergeHistory(local, remote, map) {
+  const byId = new Map(local.map((h) => [h.id, h]));
+  for (const t of remote) { const old = byId.get(t.id), m = map(t, old); byId.set(t.id, old ? { ...old, ...Object.fromEntries(Object.entries(m).filter(([, v]) => v != null)) } : m); }
+  return [...byId.values()].sort((a, b) => b.at - a.at);
+}
+async function shareText(title, text, toast) {
+  try { if (navigator.share) { await navigator.share({ title, text }); return; } } catch { return; }
+  try { await navigator.clipboard.writeText(text); toast("اتنسخ ✓", "الإيصال اتنسخ — الصقه في أي شات"); } catch { toast("مقدرناش ننسخ", "جرب تاني"); }
+}
+/** أكواد الخصم — نفس القواعد اللي على السيرفر (tripService.ts) */
+const PROMOS = {
+  FITARI2AK: { percent: 20, maxCents: 3000, label: "خصم ٢٠٪ لحد ٣٠ ج.م" },
+  WELCOME50: { percent: 50, maxCents: 5000, label: "خصم ٥٠٪ لحد ٥٠ ج.م على أول رحلة" },
+};
+const PROMO_ERR = { invalid_promo: "الكود ده مش موجود", promo_used: "إنت استخدمت الكود ده قبل كده", promo_first_trip_only: "الكود ده لأول رحلة بس" };
+const promoDiscount = (fare, p) => (p ? Math.min(p.maxCents, Math.round((fare * p.percent) / 100)) : 0);
 const PAY_METHODS = [
   { id: "card", icon: "💳", name: "كارت فيزا", sub: "•••• 4242" },
-  { id: "wallet", icon: "👛", name: "محفظة في طريقك", sub: "الرصيد ١٥٠٫٠٠ ج.م" },
+  { id: "wallet", icon: "👛", name: "محفظة في طريقك", get sub() { return "الرصيد " + fmtMoney(typeof wallet === "undefined" ? 15000 : wallet.balance); } },
   { id: "cash", icon: "💵", name: "كاش", sub: "ادفع للكابتن في الآخر" },
 ];
 
@@ -915,7 +960,9 @@ class MockServer {
 
   requestTrip(riderId, pickup, dropoff, type, labels = {}) {
     const id = "t-" + Math.random().toString(36).slice(2, 7);
-    const trip = { id, riderId, driverId: null, pickup, dropoff, type: type.id, status: "requested", version: 1, fare: fareCents(pickup, dropoff, type.mult), ...labels };
+    const { promoCode, ...rest } = labels;
+    const full = fareCents(pickup, dropoff, type.mult), p = promoCode && PROMOS[promoCode], discount = promoDiscount(full, p);
+    const trip = { id, riderId, driverId: null, pickup, dropoff, type: type.id, status: "requested", version: 1, fare: full - discount, discountCents: discount, promoCode: p ? promoCode : null, createdAt: Date.now(), ...rest };
     this.trips.set(id, trip);
     log("FSM", `trip ${id} created → requested (v1)`, "", "trip");
     this.publish("trip.requested", { tripId: id });
@@ -984,7 +1031,18 @@ class MockServer {
   }
   rate(tripId, stars) {
     const t = this.trips.get(tripId);
+    if (!t || t.riderStars) return;
+    t.riderStars = stars;
     this.publish("trip.rated", { tripId, driverId: t.driverId, stars });
+  }
+  /** في المحاكاة مفيش قاعدة بيانات: التاريخ كله على الموبايل */
+  async history() { return null; }
+  async checkPromo(riderId, raw) {
+    const code = String(raw).trim().toUpperCase(), p = PROMOS[code];
+    if (!p) return { error: "invalid_promo" };
+    if (rider.history.some((h) => h.promo === code && h.status === "completed")) return { error: "promo_used" };
+    if (code === "WELCOME50" && rider.history.some((h) => h.status === "completed")) return { error: "promo_first_trip_only" };
+    return { promo: { code, ...p } };
   }
 
   // ---------- Message Queue + المستهلكين (workers) ----------
@@ -1001,7 +1059,8 @@ const CONSUMERS = {
       flash("payment");
       if (this.processedPayments.has(e.tripId)) { log("PAY", `duplicate ${e.tripId} ignored (idempotent)`); return; }
       this.processedPayments.add(e.tripId);
-      log("PAY", `charge rider card •••• 4242 ${fmtMoney(e.fare)} (idempotency-key=${e.tripId}) ✓`, "good");
+      const via = { wallet: "wallet", cash: "cash (collected by captain)" }[this.trips.get(e.tripId)?.pay] || "card •••• 4242";
+      log("PAY", `charge rider ${via} ${fmtMoney(e.fare)} (idempotency-key=${e.tripId}) ✓`, "good");
       this.publish("payment.captured", { ...e, paymentId: "pay_" + e.tripId.slice(2) });
     }],
     ["notification", 300, function (e) {
@@ -1022,7 +1081,8 @@ const CONSUMERS = {
     ["notification", 250, function (e) {
       flash("notification");
       log("NOTIF", `push → rider: "تم خصم ${fmtMoney(e.fare)}" | driver: "اتضاف لرصيدك"`);
-      this.toRider(e.riderId, { type: "notification", title: "تم الدفع 💳", body: `اتخصم ${fmtMoney(e.fare)} من الكارت` });
+      const pay = this.trips.get(e.tripId)?.pay;
+      this.toRider(e.riderId, { type: "notification", title: pay === "cash" ? "اتدفعت كاش 💵" : "تم الدفع 💳", body: pay === "cash" ? `دفعت ${fmtMoney(e.fare)} للكابتن` : `اتخصم ${fmtMoney(e.fare)} من ${pay === "wallet" ? "المحفظة" : "الكارت"}` });
     }],
   ],
   "trip.rated": [
@@ -1088,7 +1148,7 @@ class LiveServer {
   }
   conv(t, m = {}) {
     return { ...t, fare: t.fareCents, type: t.rideType || "eco", driver: t.driverId ? this.publicDriver(t.driverId, m.driverProfile) : null,
-      riderName: m.riderName, pickupName: m.pickupName, dropoffName: m.dropoffName };
+      riderName: m.riderName, pickupName: m.pickupName || t.pickupName, dropoffName: m.dropoffName || t.dropoffName };
   }
   loginRider(id, profile) {
     if (this.riderWs) this.riderWs.close();
@@ -1162,12 +1222,23 @@ class LiveServer {
   async requestTrip(riderId, pickup, dropoff, type, labels = {}) {
     this.expectSearch = true;
     log("WS", `← rider ${riderId}: request_trip ${type.id}`, "", "gateway");
-    const r = await this.req(this.riderWs, { type: "request_trip", pickup, dropoff, rideType: type.id, ...labels });
+    const { pay, ...wire } = labels;
+    const r = await this.req(this.riderWs, { type: "request_trip", pickup, dropoff, rideType: type.id, ...wire });
     if (r.type !== "ack") { log("SYS", `request failed: ${r.code} ${r.message || ""}`, "bad"); return null; }
     this.myTrips.add(r.trip.id);
-    return this.conv(r.trip, { riderName: rider.profile?.name, ...labels });
+    return this.conv(r.trip, { riderName: rider.profile?.name, pickupName: labels.pickupName, dropoffName: labels.dropoffName });
   }
   rate(tripId, stars) { return this.req(this.riderWs, { type: "rate", tripId, stars }); }
+  /** تاريخ الرحلات من السيرفر — null لو مش متوصلين */
+  async history(role) {
+    if (role === "driver" && (!this.driverWs || this.driverWs.readyState > 1)) this.connectDriver();
+    const r = await this.req(role === "rider" ? this.riderWs : this.driverWs, { type: "history", limit: 100 });
+    return r.type === "ack" ? r.trips : null;
+  }
+  async checkPromo(riderId, code) {
+    const r = await this.req(this.riderWs, { type: "check_promo", code });
+    return r.type === "ack" ? { promo: r.promo } : { error: r.message || r.code };
+  }
 
   // ---------- رسايل الكابتن (إنت) ----------
   onDriverMsg(m) {
@@ -1182,12 +1253,14 @@ class LiveServer {
   }
   updateLocation(id, pos) {
     if (id !== me.id) return;
-    if (!this.driverWs || this.driverWs.readyState > 1) {
-      const dws = this.driverWs = this.open("driver", me.id, (m) => this.onDriverMsg(m));
-      dws.ready.then(() => dws.send(JSON.stringify({ type: "profile", name: me.meta.name, car: me.meta.car, plate: me.meta.plate })));
-    }
+    if (!this.driverWs || this.driverWs.readyState > 1) this.connectDriver();
     const ws = this.driverWs;
     ws.ready.then(() => ws.readyState === 1 && ws.send(JSON.stringify({ type: "location", lat: pos.lat, lng: pos.lng })));
+  }
+  connectDriver() {
+    const dws = this.driverWs = this.open("driver", me.id, (m) => this.onDriverMsg(m));
+    dws.ready.then(() => dws.send(JSON.stringify({ type: "profile", name: me.meta.name, car: me.meta.car, plate: me.meta.plate })));
+    return dws;
   }
   disconnect(id) { if (id === me.id && this.driverWs) { this.driverWs.close(); this.driverWs = null; } }
   async acceptTrip(tripId) {
@@ -1275,16 +1348,35 @@ const rider = {
   profile: riderProfile, id: riderProfile ? "r-" + riderProfile.phone : "r-guest",
   state: "home", pickup: offset(CENTER, 0, 0), pickName: "ميدان التحرير", dropoff: null, dropName: "", pickMode: "dropoff",
   type: RIDE_TYPES[0], pay: store.get("ft-pay") || "card",
-  trip: null, driver: null, stars: 0, history: store.get("ft-rider-history") || [], view: null,
+  trip: null, driver: null, stars: 0, history: [], view: null, histFilter: "all", promo: null,
   map: new MapView(document.getElementById("riderMap"), CENTER, 9),
 };
+// كل حساب ليه تاريخه ومحفظته (لو حد تاني سجل على نفس الموبايل مايشوفش رحلاتك)
+function riderLoadAccount() {
+  rider.history = store.get("ft-rider-history-" + rider.id) || (rider.profile ? store.get("ft-rider-history") : null) || [];
+  rider.promo = store.get("ft-promo-" + rider.id);
+}
+const riderSaveHistory = () => store.set("ft-rider-history-" + rider.id, rider.history);
+const wallet = {
+  get data() {
+    const k = "ft-wallet-" + rider.id, d = store.get(k);
+    if (d) return d;
+    const fresh = { balance: 15000, tx: [{ at: Date.now(), amount: 15000, note: "رصيد ترحيبي 🎁" }] };
+    if (rider.profile) store.set(k, fresh);
+    return fresh;
+  },
+  get balance() { return this.data.balance; },
+  get tx() { return this.data.tx; },
+  add(amount, note) { const d = this.data; d.balance += amount; d.tx.unshift({ at: Date.now(), amount, note }); d.tx = d.tx.slice(0, 40); store.set("ft-wallet-" + rider.id, d); },
+};
+riderLoadAccount();
 server.clients.rider = (m) => riderOnMsg(m);
-if (LIVE && rider.profile) server.loginRider(rider.id, rider.profile);
+if (LIVE && rider.profile) { server.loginRider(rider.id, rider.profile); riderSyncHistory(); }
 
 function riderOnMsg(m) {
   if (m.type === "trip_update") {
     const prevLabels = rider.trip || {};
-    rider.trip = { ...m.trip, pickupName: m.trip.pickupName || prevLabels.pickupName, dropoffName: m.trip.dropoffName || prevLabels.dropoffName };
+    rider.trip = { ...m.trip, pay: prevLabels.pay, pickupName: m.trip.pickupName || prevLabels.pickupName, dropoffName: m.trip.dropoffName || prevLabels.dropoffName };
     rider.driver = m.trip.driver;
     const map = { accepted: "accepted", driver_arrived: "arrived", started: "onTrip", completed: "rate", cancelled: "cancelled" };
     if (map[m.trip.status]) rider.state = map[m.trip.status];
@@ -1296,9 +1388,28 @@ function riderOnMsg(m) {
 }
 function riderRecord(t) {
   if (rider.history.some((h) => h.id === t.id)) return;
-  rider.history.unshift({ id: t.id, at: Date.now(), status: t.status, fare: t.fare, pickupName: rider.pickName, dropName: rider.dropName, dropPoint: rider.dropoff,
-    driverName: t.driver?.name, car: t.driver?.car, cancelledBy: t.cancelledBy, pay: rider.pay, type: t.type, stars: 0 });
-  rider.history = rider.history.slice(0, 50); store.set("ft-rider-history", rider.history);
+  const h = { id: t.id, at: Date.now(), status: t.status, fare: t.fare, discount: t.discountCents || 0, promo: t.promoCode || null,
+    pickupName: t.pickupName || rider.pickName, dropName: t.dropoffName || rider.dropName, pickPoint: t.pickup || rider.pickup, dropPoint: t.dropoff || rider.dropoff,
+    driverName: t.driver?.name, car: t.driver?.car, plate: t.driver?.plate, cancelledBy: t.cancelledBy, pay: rider.trip?.pay || rider.pay, type: t.type, stars: 0 };
+  rider.history.unshift(h);
+  rider.history = rider.history.slice(0, 200); riderSaveHistory();
+  if (t.status === "completed") {
+    if (h.pay === "wallet") wallet.add(-t.fare, `رحلة لـ ${h.dropName}`);
+    if (h.promo && rider.promo?.code === h.promo) { rider.promo = null; store.del("ft-promo-" + rider.id); }
+  }
+}
+/** يجيب التاريخ من السيرفر (في الوضع المباشر) ويدمجه مع اللي على الموبايل */
+async function riderSyncHistory() {
+  const remote = await server.history("rider");
+  if (!remote) return;
+  rider.history = mergeHistory(rider.history, remote, (t, old) => ({
+    id: t.id, at: old?.at ?? t.createdAt, status: t.status, fare: t.fareCents, discount: t.discountCents || 0, promo: t.promoCode,
+    pickupName: t.pickupName || "نقطة على الخريطة", dropName: t.dropoffName || "الوجهة", pickPoint: t.pickup, dropPoint: t.dropoff,
+    driverName: t.driverProfile?.name, car: t.driverProfile?.car, plate: t.driverProfile?.plate, cancelledBy: t.cancelledBy,
+    pay: old?.pay ?? "card", type: t.rideType || "eco", stars: t.riderStars || old?.stars || 0,
+  })).filter((h) => h.status === "completed" || h.status === "cancelled");
+  riderSaveHistory();
+  if (rider.view === "history" || rider.view === "trip") renderRiderOverlay();
 }
 function riderToast(title, body) {
   const el = document.createElement("div"); el.className = "toast"; el.innerHTML = `<b></b><span class="muted"></span>`;
@@ -1428,22 +1539,26 @@ function renderRider() {
     riderSearch("");
   } else if (s === "choose") {
     const pm = payOf(rider.pay);
+    const price = (t) => { const f = fareCents(rider.pickup, rider.dropoff, t.mult), d = promoDiscount(f, rider.promo); return { full: f, pay: f - d }; };
+    const cur = price(rider.type), noMoney = rider.pay === "wallet" && wallet.balance < cur.pay;
     sheet.innerHTML = `<div class="grab"></div>
       ${pointFields(true)}
-      <div class="types">${RIDE_TYPES.map(t => `<div class="type ${t.id === rider.type.id ? "sel" : ""}" data-type="${t.id}"><span class="car">${t.icon}</span><div class="grow"><b>${t.name}</b><div class="muted">${ar(2 + t.eta)} دقايق · ${t.id === "xl" ? "٦ أفراد" : "٤ أفراد"}</div></div><span class="price">${fmtMoney(fareCents(rider.pickup, rider.dropoff, t.mult))}</span></div>`).join("")}</div>
+      <div class="types">${RIDE_TYPES.map(t => { const p = price(t); return `<div class="type ${t.id === rider.type.id ? "sel" : ""}" data-type="${t.id}"><span class="car">${t.icon}</span><div class="grow"><b>${t.name}</b><div class="muted">${ar(2 + t.eta)} دقايق · ${t.id === "xl" ? "٦ أفراد" : "٤ أفراد"}</div></div><span class="price">${p.pay < p.full ? `<span class="strike">${fmtMoney(p.full)}</span>` : ""}${fmtMoney(p.pay)}</span></div>`; }).join("")}</div>
+      ${rider.promo ? `<div class="banner ok" style="margin-top:-4px">🎟 كود ${esc(rider.promo.code)} متفعّل: ${esc(rider.promo.label)}</div>` : ""}
       <div class="field clickable" id="rPay"><span>${pm.icon}</span><span>${pm.name} <span class="muted">${pm.sub}</span></span><span class="muted" style="margin-inline-start:auto">تغيير ›</span></div>
-      <div class="row" style="gap:8px"><button class="btn ghost small" id="rBack" style="width:auto;padding-inline:16px">رجوع</button><button class="btn" id="rReq" ${dLen > 400000 ? "disabled" : ""}>${dLen > 400000 ? "المسافة بعيدة أوي للعربية" : "اطلب " + rider.type.name}</button></div>`;
+      ${noMoney ? `<div class="banner warn">رصيد المحفظة مش مكفي — اشحنها أو غيّر طريقة الدفع</div>` : ""}
+      <div class="row" style="gap:8px"><button class="btn ghost small" id="rBack" style="width:auto;padding-inline:16px">رجوع</button><button class="btn" id="rReq" ${dLen > 400000 || noMoney ? "disabled" : ""}>${dLen > 400000 ? "المسافة بعيدة أوي للعربية" : "اطلب " + rider.type.name}</button></div>`;
     bindFields();
     sheet.querySelectorAll("[data-type]").forEach(el => el.onclick = () => { rider.type = RIDE_TYPES.find(t => t.id === el.dataset.type); renderRider(); });
     sheet.querySelector("#rPay").onclick = () => { rider.view = "wallet"; renderRiderOverlay(); };
     sheet.querySelector("#rBack").onclick = () => { rider.state = "home"; rider.dropoff = null; renderRider(); };
     sheet.querySelector("#rReq").onclick = async () => {
       if (!LIVE) log("WS", `← rider ${rider.id}: request_trip ${rider.type.id}`, "", "gateway");
-      rider.trip = { fare: fareCents(rider.pickup, rider.dropoff, rider.type.mult) }; rider.state = "searching"; renderRider();
-      const labels = { pickupName: rider.pickName, dropoffName: rider.dropName, riderName: rider.profile?.name };
+      rider.trip = { fare: cur.pay, pay: rider.pay }; rider.state = "searching"; renderRider();
+      const labels = { pickupName: rider.pickName, dropoffName: rider.dropName, riderName: rider.profile?.name, pay: rider.pay, ...(rider.promo ? { promoCode: rider.promo.code } : {}) };
       const t = await server.requestTrip(rider.id, rider.pickup, rider.dropoff, rider.type, labels);
       if (!t) { rider.state = "choose"; riderToast("مقدرناش نبعت الطلب", "اتأكد إن السيرفر شغال"); renderRider(); return; }
-      if (rider.state === "searching" && !rider.trip.id) { rider.trip = t; renderRider(); }
+      if (rider.state === "searching" && !rider.trip.id) { rider.trip = { ...t, pay: rider.pay }; renderRider(); }
     };
   } else if (s === "searching") {
     sheet.innerHTML = `<div class="grab"></div>
@@ -1472,17 +1587,17 @@ function renderRider() {
       ${driverCard(rider.driver)}
       <div class="row" style="gap:8px"><button class="btn ghost small">🛡️ الأمان</button><button class="btn ghost small">↗️ شارك الرحلة</button></div>`;
   } else if (s === "rate") {
-    const pm = payOf(rider.pay);
+    const pm = payOf(rider.trip.pay || rider.pay);
     sheet.innerHTML = `<div class="grab"></div><h3 style="text-align:center">وصلت بالسلامة 🎉</h3>
-      <div class="receipt"><div class="row between"><span class="muted">الأجرة</span><b>${fmtMoney(rider.trip.fare)}</b></div><div class="row between"><span class="muted">الدفع</span><span>${pm.icon} ${pm.name} ${pm.id === "card" ? pm.sub : ""}</span></div></div>
+      <div class="receipt">${rider.trip.discountCents ? `<div class="row between"><span class="muted">خصم ${esc(rider.trip.promoCode)}</span><b>−${fmtMoney(rider.trip.discountCents)}</b></div>` : ""}<div class="row between"><span class="muted">الأجرة</span><b>${fmtMoney(rider.trip.fare)}</b></div><div class="row between"><span class="muted">الدفع</span><span>${pm.icon} ${pm.name} ${pm.id === "card" ? pm.sub : ""}</span></div></div>
       <p style="text-align:center;margin:14px 0 0">إيه رأيك في الكابتن ${esc(rider.driver?.name)}؟</p>
       <div class="stars">${[1, 2, 3, 4, 5].map(i => `<span data-s="${i}" class="${i <= rider.stars ? "on" : ""}">★</span>`).join("")}</div>
       <button class="btn" id="rRate" ${rider.stars ? "" : "disabled"}>إرسال التقييم</button>
-      <div style="height:6px"></div><button class="btn ghost small" id="rSkip">تخطي</button>`;
+      <div style="height:6px"></div><button class="btn ghost small" id="rSkip">بعدين — هقيّم من «رحلاتي»</button>`;
     sheet.querySelectorAll("[data-s]").forEach(el => el.onclick = () => { rider.stars = +el.dataset.s; renderRider(); });
     sheet.querySelector("#rRate").onclick = () => {
       server.rate(rider.trip.id, rider.stars);
-      const h = rider.history.find((x) => x.id === rider.trip.id); if (h) { h.stars = rider.stars; store.set("ft-rider-history", rider.history); }
+      const h = rider.history.find((x) => x.id === rider.trip.id); if (h) { h.stars = rider.stars; riderSaveHistory(); }
       riderToast("شكراً ليك 💚", "تقييمك بيساعدنا نحسن الخدمة"); riderReset();
     };
     sheet.querySelector("#rSkip").onclick = riderReset;
@@ -1494,13 +1609,38 @@ function renderRider() {
 function riderCancel() { if (rider.trip?.id) server.cancel(rider.trip.id, "rider", rider.id); }
 function riderReset() { rider.state = "home"; rider.dropoff = null; rider.trip = null; rider.driver = null; rider.stars = 0; rider.pickMode = "dropoff"; renderRider(); }
 
-// ---------- شاشات الزبون الإضافية: تسجيل الدخول، القايمة، رحلاتي، المحفظة، الحساب ----------
+const HELP_TOPICS = [
+  { id: "lost", icon: "🎒", name: "نسيت حاجة في العربية", trip: true },
+  { id: "fare", icon: "💸", name: "مشكلة في الأجرة أو الدفع", trip: true },
+  { id: "noshow", icon: "⏱", name: "الكابتن مجاش أو اتأخر", trip: true },
+  { id: "driver", icon: "🙁", name: "شكوى من الكابتن", trip: true },
+  { id: "app", icon: "📱", name: "مشكلة في التطبيق", trip: false },
+  { id: "safety", icon: "🛡️", name: "الأمان والطوارئ", trip: false },
+];
+const tripStatusTag = (h) => h.status === "completed" ? `<span class="tag ok">مكتملة</span>` : `<span class="tag err">${h.cancelledBy === "system" ? "مفيش كباتن" : h.cancelledBy === "driver" ? "الكابتن لغاها" : "اتلغت"}</span>`;
+function riderReceiptText(h) {
+  const pm = payOf(h.pay);
+  return [`🧾 إيصال رحلة «في طريقك»`, `${dayLabel(h.at)} ${clock(h.at)}`, `من: ${h.pickupName}`, `إلى: ${h.dropName}`,
+    h.driverName ? `الكابتن: ${h.driverName} (${h.car || ""} ${h.plate || ""})` : "", h.discount ? `خصم ${h.promo}: −${fmtMoney(h.discount)}` : "",
+    `الإجمالي: ${fmtMoney(h.fare)} — ${pm.name}`, `رقم الرحلة: ${h.id}`].filter(Boolean).join("\n");
+}
+/** يرجع الزبون للشاشة الرئيسية بنفس نقطة الركوب والوجهة بتوع رحلة قديمة */
+function riderRepeat(h) {
+  if (!["home", "choose"].includes(rider.state)) { riderToast("عندك رحلة شغالة", "خلّص رحلتك الأول"); return; }
+  if (h.pickPoint) { rider.pickup = { ...h.pickPoint }; rider.pickName = h.pickupName; rider.followGps = false; rider.pickFromGps = false; }
+  rider.dropoff = { ...h.dropPoint }; rider.dropName = h.dropName;
+  rider.type = RIDE_TYPES.find((t) => t.id === h.type) || RIDE_TYPES[0];
+  rider.state = "choose"; rider.view = null; rider.pickMode = "dropoff"; renderRider();
+}
+
+// ---------- شاشات الزبون الإضافية: تسجيل الدخول، القايمة، رحلاتي، تفاصيل رحلة، المحفظة، المساعدة ----------
 function renderRiderOverlay() {
   const drawer = document.getElementById("riderDrawer"), ov = document.getElementById("riderOverlay");
   drawer.innerHTML = ""; ov.innerHTML = "";
+  const head = (title, back = "close") => `<div class="ohead"><button class="back" data-${back}>›</button><h3>${title}</h3></div>`;
   if (!rider.profile || rider.view === "editProfile") {
     const p = rider.profile || {};
-    ov.innerHTML = `${rider.profile ? `<div class="ohead"><button class="back" data-close>›</button><h3>تعديل الحساب</h3></div>` : `<div class="login-logo">${LOGO_SVG(64)}<b>في طريقك</b><span class="muted">أهلاً بيك! سجّل عشان تطلب أول رحلة</span></div>`}
+    ov.innerHTML = `${rider.profile ? head("تعديل الحساب") : `<div class="login-logo">${LOGO_SVG(64)}<b>في طريقك</b><span class="muted">أهلاً بيك! سجّل عشان تطلب أول رحلة</span></div>`}
       <form id="rLogin"><label class="lbl">الاسم</label><input class="input" name="name" required maxlength="30" placeholder="مثلاً: محمود سادات" value="${esc(p.name)}">
       <label class="lbl">رقم الموبايل</label><input class="input" name="phone" required inputmode="numeric" pattern="01[0-9]{9}" maxlength="11" placeholder="01xxxxxxxxx" value="${esc(p.phone)}" style="direction:ltr;text-align:right">
       <button class="btn" type="submit">${rider.profile ? "حفظ" : "يلا بينا"}</button></form>
@@ -1511,44 +1651,126 @@ function renderRiderOverlay() {
       const prof = { name: String(f.get("name")).trim(), phone: String(f.get("phone")).trim() };
       if (!prof.name) return;
       rider.profile = prof; rider.id = "r-" + prof.phone; store.set("ft-rider", prof); rider.view = null;
-      if (LIVE) server.loginRider(rider.id, prof);
+      riderLoadAccount();
+      if (LIVE) { server.loginRider(rider.id, prof); riderSyncHistory(); }
       renderRider(); if (!rider.pickFromGps) useMyLocation();
     };
   } else if (rider.view === "menu") {
     drawer.innerHTML = `<div class="drawer-bg" data-close></div><div class="drawer">
       <div class="row" style="margin-bottom:16px"><div class="avatar">${esc(rider.profile.name[0])}</div><div><b>${esc(rider.profile.name)}</b><div class="muted" style="direction:ltr;text-align:right">${esc(rider.profile.phone)}</div></div></div>
       <div class="menu-item" data-go="history"><span class="mi">🧾</span>رحلاتي<span class="muted" style="margin-inline-start:auto">${ar(rider.history.length)}</span></div>
-      <div class="menu-item" data-go="wallet"><span class="mi">💳</span>المحفظة وطرق الدفع</div>
+      <div class="menu-item" data-go="wallet"><span class="mi">💳</span>المحفظة وطرق الدفع<span class="muted" style="margin-inline-start:auto">${fmtMoney(wallet.balance)}</span></div>
       <div class="menu-item" data-go="editProfile"><span class="mi">👤</span>الحساب</div>
       <div class="menu-item" data-go="help"><span class="mi">🛟</span>المساعدة</div>
       <div style="flex:1"></div>
       <div class="menu-item" data-go="logout" style="color:var(--danger)"><span class="mi">↩</span>تسجيل خروج</div></div>`;
   } else if (rider.view === "history") {
-    ov.innerHTML = `<div class="ohead"><button class="back" data-close>›</button><h3>رحلاتي</h3></div>
-      ${rider.history.length ? rider.history.map((h) => `<div class="lrow"><span style="font-size:22px">${h.status === "completed" ? "🚗" : "✖️"}</span><div class="grow"><div class="ttl">${esc(h.pickupName)} ← ${esc(h.dropName)}</div>
-        <div class="muted">${timeAgo(h.at)}${h.driverName ? " · " + esc(h.driverName) : ""}${h.stars ? " · " + "★".repeat(h.stars) : ""}</div></div>
-        <div style="text-align:left"><b>${h.status === "completed" ? fmtMoney(h.fare) : "—"}</b><div class="muted">${h.status === "completed" ? payOf(h.pay).name : "اتلغت"}</div></div></div>`).join("")
-      : `<div class="empty"><div>🧾</div>لسه معملتش أي رحلة</div>`}`;
+    const f = rider.histFilter, list = rider.history.filter((h) => f === "all" || (f === "done" ? h.status === "completed" : h.status !== "completed"));
+    const done = rider.history.filter((h) => h.status === "completed"), month = done.filter((h) => new Date(h.at).getMonth() === new Date().getMonth() && new Date(h.at).getFullYear() === new Date().getFullYear());
+    ov.innerHTML = `${head("رحلاتي")}
+      ${rider.history.length ? `<div class="sum"><div><span class="muted">رحلات مكتملة</span><b>${ar(done.length)}</b></div><div><span class="muted">صرفت الشهر ده</span><b>${fmtMoney(month.reduce((a, h) => a + h.fare, 0))}</b></div></div>
+      <div class="chips">${[["all", "الكل"], ["done", "مكتملة"], ["cancelled", "ملغية"]].map(([id, n]) => `<span class="chip ${f === id ? "sel" : ""}" data-f="${id}">${n}</span>`).join("")}</div>` : ""}
+      ${list.length ? byDay(list, (h) => `<div class="lrow tap" data-h="${esc(h.id)}"><span style="font-size:22px">${h.status === "completed" ? "🚗" : "✖️"}</span><div class="grow"><div class="ttl">${esc(h.pickupName)} ← ${esc(h.dropName)}</div>
+        <div class="muted">${clock(h.at)}${h.driverName ? " · " + esc(h.driverName) : ""}${h.stars ? " · " + "★".repeat(h.stars) : h.status === "completed" ? " · <span style='color:#facc15'>قيّم ☆</span>" : ""}</div></div>
+        <div style="text-align:left"><b>${h.status === "completed" ? fmtMoney(h.fare) : "—"}</b><div class="muted">${h.status === "completed" ? payOf(h.pay).name : "اتلغت"}</div></div></div>`)
+      : `<div class="empty"><div>🧾</div>${rider.history.length ? "مفيش رحلات هنا" : "لسه معملتش أي رحلة"}</div>`}`;
+    ov.querySelectorAll("[data-f]").forEach((el) => el.onclick = () => { rider.histFilter = el.dataset.f; renderRiderOverlay(); });
+    ov.querySelectorAll("[data-h]").forEach((el) => el.onclick = () => { rider.viewTrip = el.dataset.h; rider.view = "trip"; renderRiderOverlay(); });
+  } else if (rider.view === "trip") {
+    const h = rider.history.find((x) => x.id === rider.viewTrip);
+    if (!h) { rider.view = "history"; return renderRiderOverlay(); }
+    const pm = payOf(h.pay), ok = h.status === "completed";
+    ov.innerHTML = `${head("تفاصيل الرحلة", "tohist")}
+      <div class="row between"><div><b>${dayLabel(h.at)} · ${clock(h.at)}</b><div class="muted">${(RIDE_TYPES.find((t) => t.id === h.type) || RIDE_TYPES[0]).name}${h.dropPoint && h.pickPoint ? " · " + (dist(h.pickPoint, h.dropPoint) / 1000).toFixed(1) + " كم" : ""}</div></div>${tripStatusTag(h)}</div>
+      <div class="tl"><div><span class="muted">من</span> ${esc(h.pickupName)}</div><div class="to"><span class="muted">إلى</span> ${esc(h.dropName)}</div></div>
+      ${h.driverName ? `<div class="driver-card"><div class="avatar">${esc(h.driverName[0])}</div><div style="flex:1"><b>${esc(h.driverName)}</b><div class="muted">${esc(h.car || "")}</div></div>${h.plate ? `<span class="plate">${esc(h.plate)}</span>` : ""}</div>` : ""}
+      ${ok ? `<div class="receipt">
+        <div class="row between"><span class="muted">الأجرة</span><span>${fmtMoney(h.fare + (h.discount || 0))}</span></div>
+        ${h.discount ? `<div class="row between"><span class="muted">خصم ${esc(h.promo)}</span><span style="color:var(--accent)">−${fmtMoney(h.discount)}</span></div>` : ""}
+        <div class="row between"><span class="muted">الإجمالي</span><b>${fmtMoney(h.fare)}</b></div>
+        <div class="row between"><span class="muted">الدفع</span><span>${pm.icon} ${pm.name}</span></div></div>
+        <p style="text-align:center;margin:14px 0 0">${h.stars ? "تقييمك للكابتن" : "لسه ماقيّمتش الرحلة دي"}</p>
+        <div class="stars">${[1, 2, 3, 4, 5].map((i) => `<span data-s="${i}" class="${i <= h.stars ? "on" : ""}" style="${h.stars ? "cursor:default" : ""}">★</span>`).join("")}</div>`
+      : `<div class="banner err">${h.cancelledBy === "system" ? "مكانش فيه كباتن قريبين ساعتها — مفيش أي فلوس اتخصمت" : h.cancelledBy === "driver" ? "الكابتن لغى الرحلة — مفيش أي فلوس اتخصمت" : "إنت لغيت الرحلة — مفيش أي فلوس اتخصمت"}</div>`}
+      <div style="height:6px"></div>
+      ${h.dropPoint ? `<button class="btn" id="rRepeat">🔁 اطلب نفس الرحلة تاني</button><div style="height:8px"></div>` : ""}
+      <div class="row" style="gap:8px">${ok ? `<button class="btn ghost small" id="rShare">↗️ شارك الإيصال</button>` : ""}<button class="btn ghost small" id="rIssue">🛟 مشكلة في الرحلة دي؟</button></div>
+      <div class="muted" style="text-align:center;margin-top:12px;font-size:11.5px;direction:ltr">${esc(h.id)}</div>`;
+    if (!h.stars && ok) ov.querySelectorAll("[data-s]").forEach((el) => el.onclick = async () => {
+      h.stars = +el.dataset.s; riderSaveHistory(); renderRiderOverlay();
+      await server.rate(h.id, h.stars); riderToast("شكراً ليك 💚", "تقييمك اتسجل");
+    });
+    ov.querySelector("#rRepeat")?.addEventListener("click", () => riderRepeat(h));
+    ov.querySelector("#rShare")?.addEventListener("click", () => shareText("إيصال رحلة", riderReceiptText(h), riderToast));
+    ov.querySelector("#rIssue").onclick = () => { rider.ticket = { topic: null, tripId: h.id }; rider.view = "help"; renderRiderOverlay(); };
   } else if (rider.view === "wallet") {
     const spent = rider.history.filter((h) => h.status === "completed").reduce((a, h) => a + h.fare, 0);
-    ov.innerHTML = `<div class="ohead"><button class="back" data-close>›</button><h3>المحفظة وطرق الدفع</h3></div>
-      <div class="kv" style="margin-top:0"><div><span class="muted">رصيد المحفظة</span><b>١٥٠٫٠٠ ج.م</b></div><div><span class="muted">صرفت في رحلات</span><b>${fmtMoney(spent)}</b></div></div>
+    ov.innerHTML = `${head("المحفظة وطرق الدفع")}
+      <div class="kv" style="margin-top:0"><div><span class="muted">رصيد المحفظة</span><b id="wBal">${fmtMoney(wallet.balance)}</b></div><div><span class="muted">صرفت في رحلات</span><b>${fmtMoney(spent)}</b></div></div>
+      <div class="muted" style="margin:2px 0 6px">اشحن المحفظة (شحن تجريبي — مفيش فلوس حقيقية)</div>
+      <div class="row" style="gap:8px;margin-bottom:12px">${[5000, 10000, 20000].map((c) => `<button class="btn ghost small" data-top="${c}">+${ar(c / 100)} ج</button>`).join("")}</div>
       <div class="muted" style="margin:6px 0 8px">طريقة الدفع الأساسية</div>
       ${PAY_METHODS.map((m) => `<div class="pay ${m.id === rider.pay ? "sel" : ""}" data-pay="${m.id}"><span style="font-size:22px">${m.icon}</span><div class="grow"><b>${m.name}</b><div class="muted">${m.sub}</div></div>${m.id === rider.pay ? "✓" : ""}</div>`).join("")}
       <div class="muted" style="margin:14px 0 6px">عندك كود خصم؟</div>
-      <form id="promo" class="row" style="gap:8px"><input class="input" name="code" placeholder="FITARI2AK" style="margin:0;direction:ltr"><button class="btn small" style="width:auto;padding-inline:18px">تفعيل</button></form>
-      <div id="promoMsg" class="muted" style="margin-top:8px"></div>`;
+      ${rider.promo ? `<div class="banner ok row between"><span>🎟 <b>${esc(rider.promo.code)}</b> — ${esc(rider.promo.label)}<br><span class="muted">هيتطبق على رحلتك الجاية</span></span><button class="btn ghost small" id="promoDel" style="width:auto">شيله</button></div>`
+      : `<form id="promo" class="row" style="gap:8px"><input class="input" name="code" placeholder="FITARI2AK" style="margin:0;direction:ltr" autocomplete="off"><button class="btn small" style="width:auto;padding-inline:18px">تفعيل</button></form>`}
+      <div id="promoMsg" class="muted" style="margin-top:8px"></div>
+      ${wallet.tx.length ? `<div class="muted" style="margin:14px 0 2px">حركة المحفظة</div>${wallet.tx.slice(0, 10).map((t) => `<div class="lrow"><div class="grow"><div class="ttl">${esc(t.note)}</div><div class="muted">${timeAgo(t.at)}</div></div><b style="direction:ltr;color:${t.amount > 0 ? "var(--accent)" : "inherit"}">${t.amount > 0 ? "+" : "−"}${fmtMoney(Math.abs(t.amount))}</b></div>`).join("")}` : ""}`;
     ov.querySelectorAll("[data-pay]").forEach((el) => el.onclick = () => { rider.pay = el.dataset.pay; store.set("ft-pay", rider.pay); renderRider(); });
-    ov.querySelector("#promo").onsubmit = (e) => { e.preventDefault(); ov.querySelector("#promoMsg").textContent = "الكود ده مش شغال دلوقتي — الخصومات جاية قريب 😉"; };
+    ov.querySelectorAll("[data-top]").forEach((el) => el.onclick = () => { wallet.add(+el.dataset.top, "شحن رصيد"); riderToast("اتشحنت ✓", `رصيدك ${fmtMoney(wallet.balance)}`); renderRider(); });
+    ov.querySelector("#promoDel")?.addEventListener("click", () => { rider.promo = null; store.del("ft-promo-" + rider.id); renderRider(); });
+    ov.querySelector("#promo")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const code = String(new FormData(e.target).get("code") || "").trim(), msg = ov.querySelector("#promoMsg");
+      if (!code) return;
+      msg.textContent = "بنتأكد من الكود…";
+      const r = await server.checkPromo(rider.id, code);
+      if (r.error) { msg.textContent = PROMO_ERR[r.error] || "مقدرناش نتأكد من الكود — جرب تاني"; return; }
+      rider.promo = r.promo; store.set("ft-promo-" + rider.id, r.promo);
+      riderToast("الكود اتفعّل 🎟", r.promo.label); renderRider();
+    });
   } else if (rider.view === "help") {
-    ov.innerHTML = `<div class="ohead"><button class="back" data-close>›</button><h3>المساعدة</h3></div>
-      ${[["نسيت حاجة في العربية", "🎒"], ["مشكلة في الأجرة", "💸"], ["الكابتن مجاش", "⏱"], ["الأمان والطوارئ", "🛡️"]].map(([t, i]) => `<div class="lrow"><span style="font-size:20px">${i}</span><div class="grow ttl">${t}</div><span class="muted">›</span></div>`).join("")}`;
+    const tk = rider.ticket || (rider.ticket = { topic: null, tripId: null });
+    const tickets = store.get("ft-tickets-" + rider.id) || [];
+    if (!tk.topic) {
+      ov.innerHTML = `${head("المساعدة")}
+        ${tk.tripId ? `<div class="banner ok">بخصوص رحلة ${esc(rider.history.find((h) => h.id === tk.tripId)?.dropName || "")} — اختار المشكلة</div>` : ""}
+        ${HELP_TOPICS.map((t) => `<div class="lrow tap" data-topic="${t.id}"><span style="font-size:20px">${t.icon}</span><div class="grow ttl">${t.name}</div><span class="muted">‹</span></div>`).join("")}
+        ${tickets.length ? `<div class="muted" style="margin:16px 0 2px">طلباتك</div>${tickets.slice(0, 8).map((x) => `<div class="lrow"><div class="grow"><div class="ttl">${esc(x.title)}</div><div class="muted">#${esc(x.no)} · ${timeAgo(x.at)}</div></div><span class="tag">بنراجعها</span></div>`).join("")}` : ""}`;
+      ov.querySelectorAll("[data-topic]").forEach((el) => el.onclick = () => { tk.topic = el.dataset.topic; renderRiderOverlay(); });
+    } else if (tk.topic === "safety") {
+      ov.innerHTML = `${head("الأمان والطوارئ", "helpback")}
+        <div class="banner err">لو في خطر دلوقتي، كلّم الطوارئ على طول</div>
+        <a class="lrow tap" href="tel:122" style="color:inherit;text-decoration:none"><span style="font-size:20px">🚓</span><div class="grow ttl">شرطة النجدة — ١٢٢</div><span class="muted">اتصل</span></a>
+        <a class="lrow tap" href="tel:123" style="color:inherit;text-decoration:none"><span style="font-size:20px">🚑</span><div class="grow ttl">الإسعاف — ١٢٣</div><span class="muted">اتصل</span></a>
+        ${rider.trip?.id && ["accepted", "arrived", "onTrip"].includes(rider.state) ? `<button class="btn ghost" id="shareLive" style="margin-top:12px">↗️ شارك تفاصيل رحلتك الحالية مع حد بتثق فيه</button>` : ""}
+        <div class="muted" style="margin-top:14px">نصايح: اتأكد من نمرة العربية واسم الكابتن قبل ما تركب، واقعد ورا.</div>`;
+      ov.querySelector("#shareLive")?.addEventListener("click", () => { const d = rider.driver || {}; shareText("رحلتي", `أنا راكب مع ${d.name} (${d.car} — ${d.plate}) من ${rider.pickName} لـ ${rider.dropName}`, riderToast); });
+    } else {
+      const topic = HELP_TOPICS.find((t) => t.id === tk.topic), recent = rider.history.slice(0, 10);
+      ov.innerHTML = `${head(topic.name, "helpback")}
+        <form id="ticket">
+        ${topic.trip ? `<label class="lbl">الرحلة</label><select class="input" name="trip">${recent.length ? recent.map((h) => `<option value="${esc(h.id)}" ${h.id === tk.tripId ? "selected" : ""}>${dayLabel(h.at)} ${clock(h.at)} — ${esc(h.dropName)}</option>`).join("") : `<option value="">مفيش رحلات</option>`}</select>` : ""}
+        <label class="lbl">احكيلنا حصل إيه</label><textarea class="input" name="body" required maxlength="500" placeholder="اكتب التفاصيل هنا…"></textarea>
+        <button class="btn" type="submit">ابعت</button></form>
+        <div class="muted" style="margin-top:10px">فريق الدعم بيرد في خلال ٢٤ ساعة على رقم موبايلك ${esc(rider.profile.phone)}</div>`;
+      ov.querySelector("#ticket").onsubmit = (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target), no = ar(Math.floor(100000 + Math.random() * 900000));
+        tickets.unshift({ no, at: Date.now(), topic: topic.id, title: topic.name, tripId: f.get("trip") || null, body: String(f.get("body")).slice(0, 500) });
+        store.set("ft-tickets-" + rider.id, tickets.slice(0, 30));
+        rider.ticket = null; riderToast("استلمنا طلبك ✓", `رقم الطلب #${no} — هنكلمك قريب`); renderRiderOverlay();
+      };
+    }
   }
-  const close = () => { rider.view = null; renderRiderOverlay(); };
+  const close = () => { rider.view = null; rider.ticket = null; renderRiderOverlay(); };
   [...drawer.querySelectorAll("[data-close]"), ...ov.querySelectorAll("[data-close]")].forEach((b) => b.onclick = close);
+  ov.querySelector("[data-tohist]")?.addEventListener("click", () => { rider.view = "history"; renderRiderOverlay(); });
+  ov.querySelector("[data-helpback]")?.addEventListener("click", () => { rider.ticket.topic = null; renderRiderOverlay(); });
   drawer.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => {
-    if (b.dataset.go === "logout") { store.del("ft-rider"); rider.profile = null; rider.view = null; riderReset(); return; }
+    if (b.dataset.go === "logout") { store.del("ft-rider"); rider.profile = null; rider.view = null; rider.id = "r-guest"; riderLoadAccount(); riderReset(); return; }
     rider.view = b.dataset.go; renderRiderOverlay();
+    if (rider.view === "history" && LIVE) riderSyncHistory();
   });
 }
 
@@ -1560,10 +1782,35 @@ const me = {
   profile: driverProfile, id: driverProfile ? "d-" + driverProfile.phone : "d-me", online: false, pos: offset(CENTER, 520, -380), heading: 0,
   meta: driverProfile ? { name: driverProfile.name, car: driverProfile.car, plate: driverProfile.plate, baseRating: 4.93 } : { name: "كابتن", car: "تويوتا كورولا", plate: "م ش ر ١٨١١", baseRating: 4.93 },
   state: "offline", offer: null, offerLeft: 0, trip: null, banner: null,
-  history: store.get("ft-driver-history") || [], sent: 0, view: null,
+  history: [], stats: null, sent: 0, view: null, histFilter: "all", earnTab: "today",
   map: new MapView(document.getElementById("driverMap"), CENTER, 7),
 };
-const todayTrips = () => me.history.filter((h) => new Date(h.at).toDateString() === new Date().toDateString());
+function meLoadAccount() {
+  me.history = store.get("ft-driver-history-" + me.id) || (me.profile ? store.get("ft-driver-history") : null) || [];
+  me.stats = store.get("ft-driver-stats-" + me.id) || { offers: 0, accepted: 0 };
+}
+const meSaveHistory = () => store.set("ft-driver-history-" + me.id, me.history);
+const meSaveStats = () => store.set("ft-driver-stats-" + me.id, me.stats);
+function meRecord(t, status) {
+  if (me.history.some((h) => h.id === t.id)) return;
+  me.history.unshift({ id: t.id, at: Date.now(), status, fare: t.fare, net: null, riderName: t.riderName, pickupName: t.pickupName, dropoffName: t.dropoffName,
+    pickPoint: t.pickup, dropPoint: t.dropoff, km: t.pickup && t.dropoff ? dist(t.pickup, t.dropoff) / 1000 : 0, type: t.type, cancelledBy: t.cancelledBy || (status === "cancelled" ? "rider" : null) });
+  me.history = me.history.slice(0, 300); meSaveHistory();
+}
+async function meSyncHistory() {
+  const remote = await server.history("driver");
+  if (!remote) return;
+  me.history = mergeHistory(me.history, remote, (t, old) => ({
+    id: t.id, at: old?.at ?? t.createdAt, status: t.status, fare: t.fareCents, net: t.netCents ?? old?.net ?? null, riderName: t.riderName, pickupName: t.pickupName, dropoffName: t.dropoffName,
+    pickPoint: t.pickup, dropPoint: t.dropoff, km: dist(t.pickup, t.dropoff) / 1000, type: t.rideType || "eco", cancelledBy: t.cancelledBy, stars: t.riderStars,
+  })).filter((h) => h.status === "completed" || h.status === "cancelled");
+  meSaveHistory();
+  if (me.view) renderDriverOverlay();
+}
+const acceptRate = () => (me.stats.offers ? `${ar(Math.round((me.stats.accepted / me.stats.offers) * 100))}٪` : "—");
+meLoadAccount();
+const completed = (h) => h.status !== "cancelled";
+const todayTrips = () => me.history.filter((h) => completed(h) && new Date(h.at).toDateString() === new Date().toDateString());
 Object.defineProperty(me, "earnings", { get: () => todayTrips().reduce((a, h) => a + (h.net || 0), 0) });
 Object.defineProperty(me, "tripsToday", { get: () => todayTrips().length });
 server.clients.drivers.set(me.id, (m) => meOnMsg(m));
@@ -1589,6 +1836,7 @@ function meOnMsg(m) {
   if (m.type === "trip_offer") {
     if (me.state !== "idle") { server.declineOffer(m.trip.id, me.id); return; }
     me.offer = m; me.offerLeft = m.expiresIn; me.state = "offer"; me.banner = null;
+    me.stats.offers++; meSaveStats();
     clearInterval(me.offerT);
     me.offerT = setInterval(() => { me.offerLeft--; if (me.offerLeft <= 0) { clearInterval(me.offerT); server.declineOffer(me.offer.trip.id, me.id); me.state = "idle"; me.banner = { cls: "warn", text: "العرض انتهى ⏱" }; renderDriver(); } else renderDriver(); }, 1000);
     renderDriver();
@@ -1603,11 +1851,11 @@ function meOnMsg(m) {
     if (me.state === "idle" && (t.status === "completed" || t.status === "cancelled")) return;
     me.trip = { ...t, riderName: t.riderName || keep.riderName, pickupName: t.pickupName || keep.pickupName, dropoffName: t.dropoffName || keep.dropoffName };
     if (t.status === "accepted") { me.state = "toPickup"; }
-    if (t.status === "cancelled") { me.state = "idle"; me.trip = null; me.banner = { cls: "err", text: "الزبون لغى الرحلة" }; }
+    if (t.status === "cancelled") { meRecord(me.trip, "cancelled"); me.state = "idle"; me.trip = null; me.banner = { cls: "err", text: "الزبون لغى الرحلة" }; }
     renderDriver();
   } else if (m.type === "earning") {
     const h = me.history.find((x) => x.id === m.tripId) || me.history[0];
-    if (h && h.net == null) { h.net = m.amount; store.set("ft-driver-history", me.history); }
+    if (h && h.net == null) { h.net = m.amount; meSaveHistory(); }
     renderDriver(); if (me.view) renderDriverOverlay();
   }
 }
@@ -1623,6 +1871,7 @@ async function meAccept() {
       r = server.acceptConcurrently(tripId, [me.id, rival])[me.id];
     } else r = await server.acceptTrip(tripId, me.id);
   } else r = await server.acceptTrip(tripId, me.id);
+  if (r.ok) { me.stats.accepted++; meSaveStats(); }
   if (r.ok && me.state === "offer") { me.trip = { ...me.offer.trip, status: "accepted", driverId: me.id }; me.state = "toPickup"; }
   if (!r.ok && me.state !== "toPickup") { me.state = "idle"; me.banner = { cls: "warn", text: r.reason === "already_taken" ? "كابتن تاني سبقك بجزء من الثانية — السيرفر رفض قبولك (Conditional Update) 🏁" : "مش متاح" }; }
   renderDriver();
@@ -1646,7 +1895,7 @@ function renderDriver() {
     sheet.innerHTML = `<div class="grab"></div>${banner}
       <button class="toggle" id="dOnline"><span>${me.online ? "إنت أونلاين — مستني طلبات" : "ابدأ استقبال الطلبات"}</span><span class="switch ${me.online ? "on" : ""}"></span></button>
       ${me.online ? `<div class="muted" style="margin-top:8px">📡 الأبلكيشن بيبعت مكانك كل ثانية على WebSocket<br>خليتك الحالية في H3: <code style="direction:ltr;display:inline-block">${cell}</code></div>` : `<div class="muted" style="margin-top:8px">لما تبقى أونلاين، مكانك بيتخزن في ميموري السيرفر بس (مش في قاعدة بيانات).</div>`}
-      <div class="kv"><div><span class="muted">أرباح النهاردة</span><b>${fmtMoney(me.earnings)}</b></div><div><span class="muted">رحلات النهاردة</span><b>${ar(me.tripsToday)}</b></div><div><span class="muted">تقييمك</span><b>★ ${server.avgRating(me.id).toFixed(2)}</b></div><div><span class="muted">نسبة القبول</span><b>٩٤٪</b></div></div>`;
+      <div class="kv"><div><span class="muted">أرباح النهاردة</span><b>${fmtMoney(me.earnings)}</b></div><div><span class="muted">رحلات النهاردة</span><b>${ar(me.tripsToday)}</b></div><div><span class="muted">تقييمك</span><b>★ ${server.avgRating(me.id).toFixed(2)}</b></div><div><span class="muted">نسبة القبول</span><b>${acceptRate()}</b></div></div>`;
     sheet.querySelector("#dOnline").onclick = () => { me.banner = null; goOnline(!me.online); };
   } else if (s === "offer") {
     const t = me.offer.trip, frac = me.offerLeft / me.offer.expiresIn, C = 2 * Math.PI * 22;
@@ -1684,23 +1933,23 @@ function renderDriver() {
       if (s === "toPickup") { if (await server.transition(t.id, "arrive", me.id)) me.state = "atPickup"; }
       else if (s === "atPickup") { if (await server.transition(t.id, "start", me.id)) me.state = "onTrip"; }
       else if (await server.complete(t.id, me.id)) {
-        me.history.unshift({ id: t.id, at: Date.now(), fare: t.fare, net: null, riderName: t.riderName, pickupName: t.pickupName, dropoffName: t.dropoffName, km: dist(t.pickup, t.dropoff) / 1000 });
-        me.history = me.history.slice(0, 100); store.set("ft-driver-history", me.history);
+        meRecord(t, "completed");
         me.state = "idle"; me.trip = null; me.banner = { cls: "ok", text: "الرحلة خلصت ✓ — الدفع والحسابات بتتعمل في الخلفية" };
       }
       me.banner = me.state === "idle" ? me.banner : null; renderDriver();
     };
-    const c = sheet.querySelector("#dCancel"); if (c) c.onclick = async () => { if (await server.cancel(t.id, "driver", me.id)) { me.state = "idle"; me.trip = null; me.banner = null; renderDriver(); } };
+    const c = sheet.querySelector("#dCancel"); if (c) c.onclick = async () => { if (await server.cancel(t.id, "driver", me.id)) { meRecord({ ...t, cancelledBy: "driver" }, "cancelled"); me.state = "idle"; me.trip = null; me.banner = null; renderDriver(); } };
   }
 }
 
-// ---------- شاشات الكابتن الإضافية: التسجيل، القايمة، الأرباح، رحلاتي، البروفايل ----------
+// ---------- شاشات الكابتن الإضافية: التسجيل، القايمة، الأرباح، رحلاتي، تفاصيل رحلة، البروفايل ----------
 function renderDriverOverlay() {
   const drawer = document.getElementById("driverDrawer"), ov = document.getElementById("driverOverlay");
   drawer.innerHTML = ""; ov.innerHTML = "";
+  const head = (title, back = "close") => `<div class="ohead"><button class="back" data-${back}>›</button><h3>${title}</h3></div>`;
   if (!me.profile || me.view === "editProfile") {
     const p = me.profile || {};
-    ov.innerHTML = `${me.profile ? `<div class="ohead"><button class="back" data-close>›</button><h3>تعديل البيانات</h3></div>` : `<div class="login-logo">${LOGO_SVG(56)}<b>في طريقك — كابتن</b><span class="muted">سجّل بياناتك وبيانات عربيتك</span></div>`}
+    ov.innerHTML = `${me.profile ? head("تعديل البيانات") : `<div class="login-logo">${LOGO_SVG(56)}<b>في طريقك — كابتن</b><span class="muted">سجّل بياناتك وبيانات عربيتك</span></div>`}
       <form id="dLogin"><label class="lbl">الاسم</label><input class="input" name="name" required maxlength="30" placeholder="الاسم زي البطاقة" value="${esc(p.name)}">
       <label class="lbl">رقم الموبايل</label><input class="input" name="phone" required inputmode="numeric" pattern="01[0-9]{9}" maxlength="11" placeholder="01xxxxxxxxx" value="${esc(p.phone)}" style="direction:ltr;text-align:right">
       <label class="lbl">العربية</label><select class="input" name="car">${CARS.map((c) => `<option ${c === p.car ? "selected" : ""}>${c}</option>`).join("")}</select>
@@ -1713,9 +1962,11 @@ function renderDriverOverlay() {
       if (me.online) goOnline(false);
       server.clients.drivers.delete(me.id);
       me.profile = prof; me.id = "d-" + prof.phone; me.meta = { ...me.meta, name: prof.name, car: prof.car, plate: prof.plate };
+      meLoadAccount();
       server.clients.drivers.set(me.id, (m) => meOnMsg(m));
       store.set("ft-driver", prof); me.view = null; renderDriver(); renderDriverOverlay();
       if (APP === "driver") startGps();
+      if (LIVE) meSyncHistory();
     };
   } else if (me.view === "menu") {
     drawer.innerHTML = `<div class="drawer-bg" data-close></div><div class="drawer">
@@ -1726,29 +1977,60 @@ function renderDriverOverlay() {
       <div style="flex:1"></div>
       <div class="menu-item" data-go="logout" style="color:var(--danger)"><span class="mi">↩</span>تسجيل خروج</div></div>`;
   } else if (me.view === "earnings") {
-    const today = todayTrips(), gross = today.reduce((a, h) => a + h.fare, 0), net = me.earnings, fee = gross - net;
-    const hours = Array.from({ length: 8 }, (_, i) => { const h = (new Date().getHours() - 7 + i + 24) % 24; return { h, v: today.filter((t) => new Date(t.at).getHours() === h).reduce((a, t) => a + (t.net || 0), 0) }; });
-    const max = Math.max(1, ...hours.map((x) => x.v));
-    ov.innerHTML = `<div class="ohead"><button class="back" data-close>›</button><h3>أرباح النهاردة</h3></div>
-      <div style="text-align:center;margin:6px 0 4px"><div class="muted">صافي ليك</div><div class="price" style="font-size:34px">${fmtMoney(net)}</div><div class="muted">${ar(today.length)} رحلة</div></div>
-      <div class="bars">${hours.map((x) => `<div style="height:${(x.v / max) * 100}%"></div>`).join("")}</div>
-      <div class="bars-l">${hours.map((x) => `<span>${x.h}</span>`).join("")}</div>
+    const week = me.earnTab === "week", from = week ? startOfWeek() : new Date().setHours(0, 0, 0, 0);
+    const list = me.history.filter((h) => completed(h) && h.at >= from);
+    const gross = list.reduce((a, h) => a + h.fare, 0), net = list.reduce((a, h) => a + (h.net || 0), 0), fee = list.reduce((a, h) => a + (h.net == null ? 0 : h.fare - h.net), 0);
+    const pending = list.filter((h) => h.net == null).length;
+    const bars = week
+      ? Array.from({ length: 7 }, (_, i) => { const d = new Date(from + i * 864e5); return { l: d.toLocaleDateString("ar-EG", { weekday: "narrow" }), v: list.filter((t) => new Date(t.at).toDateString() === d.toDateString()).reduce((a, t) => a + (t.net || 0), 0) }; })
+      : Array.from({ length: 8 }, (_, i) => { const h = (new Date().getHours() - 7 + i + 24) % 24; return { l: h, v: list.filter((t) => new Date(t.at).getHours() === h).reduce((a, t) => a + (t.net || 0), 0) }; });
+    const max = Math.max(1, ...bars.map((x) => x.v));
+    ov.innerHTML = `${head("الأرباح")}
+      <div class="chips">${[["today", "النهاردة"], ["week", "آخر ٧ أيام"]].map(([id, n]) => `<span class="chip ${me.earnTab === id ? "sel" : ""}" data-tab="${id}">${n}</span>`).join("")}</div>
+      <div style="text-align:center;margin:6px 0 4px"><div class="muted">صافي ليك</div><div class="price" style="font-size:34px">${fmtMoney(net)}</div><div class="muted">${ar(list.length)} رحلة${list.length ? ` · ${(list.reduce((a, h) => a + (h.km || 0), 0)).toFixed(1)} كم` : ""}</div></div>
+      <div class="bars">${bars.map((x) => `<div style="height:${(x.v / max) * 100}%"></div>`).join("")}</div>
+      <div class="bars-l">${bars.map((x) => `<span>${x.l}</span>`).join("")}</div>
       <div class="receipt" style="margin-top:12px">
         <div class="row between"><span class="muted">إجمالي الأجرة</span><b>${fmtMoney(gross)}</b></div>
         <div class="row between"><span class="muted">عمولة المنصة (٢٠٪)</span><b>−${fmtMoney(fee)}</b></div>
-        <div class="row between"><span class="muted">الصافي</span><b style="color:var(--accent)">${fmtMoney(net)}</b></div></div>
-      <div class="muted" style="margin:14px 0 4px">الأرقام دي جاية من خدمة الحسابات (قيد مزدوج) بعد ما الدفع ينجح</div>
-      ${today.slice(0, 20).map((h) => `<div class="lrow"><span>🚗</span><div class="grow"><div class="ttl">${esc(h.dropoffName || "رحلة")}</div><div class="muted">${timeAgo(h.at)} · ${h.km.toFixed(1)} كم</div></div><b>${h.net == null ? "…" : "+" + fmtMoney(h.net)}</b></div>`).join("")}`;
+        <div class="row between"><span class="muted">الصافي</span><b style="color:var(--accent)">${fmtMoney(net)}</b></div>
+        ${pending ? `<div class="row between"><span class="muted">رحلات الدفع بتاعها لسه بيتعمل</span><b>${ar(pending)}</b></div>` : ""}</div>
+      <div class="kv"><div><span class="muted">نسبة القبول</span><b>${acceptRate()}</b></div><div><span class="muted">عروض جاتلك</span><b>${ar(me.stats.offers)}</b></div></div>
+      <div class="muted" style="margin:6px 0 4px">الأرقام دي جاية من خدمة الحسابات (قيد مزدوج) بعد ما الدفع ينجح</div>
+      ${list.slice(0, 30).map((h) => `<div class="lrow tap" data-h="${esc(h.id)}"><span>🚗</span><div class="grow"><div class="ttl">${esc(h.dropoffName || "رحلة")}</div><div class="muted">${week ? dayLabel(h.at) + " " : ""}${clock(h.at)} · ${(h.km || 0).toFixed(1)} كم</div></div><b>${h.net == null ? "…" : "+" + fmtMoney(h.net)}</b></div>`).join("")}`;
+    ov.querySelectorAll("[data-tab]").forEach((el) => el.onclick = () => { me.earnTab = el.dataset.tab; renderDriverOverlay(); });
   } else if (me.view === "history") {
-    ov.innerHTML = `<div class="ohead"><button class="back" data-close>›</button><h3>رحلاتي</h3></div>
-      ${me.history.length ? me.history.map((h) => `<div class="lrow"><span style="font-size:20px">🚗</span><div class="grow"><div class="ttl">${esc(h.pickupName || "—")} ← ${esc(h.dropoffName || "—")}</div><div class="muted">${timeAgo(h.at)} · ${esc(h.riderName || "زبون")}</div></div><div style="text-align:left"><b>${fmtMoney(h.fare)}</b><div class="muted">${h.net == null ? "" : "صافي " + fmtMoney(h.net)}</div></div></div>`).join("")
-      : `<div class="empty"><div>🧾</div>لسه معملتش رحلات — خليك أونلاين واستقبل طلبات</div>`}`;
+    const f = me.histFilter, list = me.history.filter((h) => f === "all" || (f === "done" ? completed(h) : !completed(h)));
+    const wk = me.history.filter((h) => completed(h) && h.at >= startOfWeek());
+    ov.innerHTML = `${head("رحلاتي")}
+      ${me.history.length ? `<div class="sum"><div><span class="muted">رحلات الأسبوع</span><b>${ar(wk.length)}</b></div><div><span class="muted">صافي الأسبوع</span><b>${fmtMoney(wk.reduce((a, h) => a + (h.net || 0), 0))}</b></div></div>
+      <div class="chips">${[["all", "الكل"], ["done", "مكتملة"], ["cancelled", "ملغية"]].map(([id, n]) => `<span class="chip ${f === id ? "sel" : ""}" data-f="${id}">${n}</span>`).join("")}</div>` : ""}
+      ${list.length ? byDay(list, (h) => `<div class="lrow tap" data-h="${esc(h.id)}"><span style="font-size:20px">${completed(h) ? "🚗" : "✖️"}</span><div class="grow"><div class="ttl">${esc(h.pickupName || "—")} ← ${esc(h.dropoffName || "—")}</div><div class="muted">${clock(h.at)} · ${esc(h.riderName || "زبون")}</div></div><div style="text-align:left"><b>${completed(h) ? fmtMoney(h.fare) : "—"}</b><div class="muted">${completed(h) ? (h.net == null ? "" : "صافي " + fmtMoney(h.net)) : "اتلغت"}</div></div></div>`)
+      : `<div class="empty"><div>🧾</div>${me.history.length ? "مفيش رحلات هنا" : "لسه معملتش رحلات — خليك أونلاين واستقبل طلبات"}</div>`}`;
+    ov.querySelectorAll("[data-f]").forEach((el) => el.onclick = () => { me.histFilter = el.dataset.f; renderDriverOverlay(); });
+  } else if (me.view === "trip") {
+    const h = me.history.find((x) => x.id === me.viewTrip);
+    if (!h) { me.view = "history"; return renderDriverOverlay(); }
+    const ok = completed(h);
+    ov.innerHTML = `${head("تفاصيل الرحلة", "tohist")}
+      <div class="row between"><div><b>${dayLabel(h.at)} · ${clock(h.at)}</b><div class="muted">${(RIDE_TYPES.find((t) => t.id === h.type) || RIDE_TYPES[0]).name} · ${(h.km || 0).toFixed(1)} كم</div></div>${tripStatusTag(h)}</div>
+      <div class="tl"><div><span class="muted">من</span> ${esc(h.pickupName || "نقطة على الخريطة")}</div><div class="to"><span class="muted">إلى</span> ${esc(h.dropoffName || "الوجهة")}</div></div>
+      <div class="driver-card"><div class="avatar">${esc((h.riderName || "ز")[0])}</div><div style="flex:1"><b>${esc(h.riderName || "زبون")}</b><div class="muted">الزبون${h.stars ? " · قيّمك " + "★".repeat(h.stars) : ""}</div></div></div>
+      ${ok ? `<div class="receipt">
+        <div class="row between"><span class="muted">الأجرة</span><b>${fmtMoney(h.fare)}</b></div>
+        <div class="row between"><span class="muted">عمولة المنصة (٢٠٪)</span><span>${h.net == null ? "…" : "−" + fmtMoney(h.fare - h.net)}</span></div>
+        <div class="row between"><span class="muted">صافي ليك</span><b style="color:var(--accent)">${h.net == null ? "الدفع لسه بيتعمل…" : fmtMoney(h.net)}</b></div></div>`
+      : `<div class="banner err">${h.cancelledBy === "driver" ? "إنت لغيت الرحلة دي" : "الزبون لغى الرحلة"}</div>`}
+      <div class="muted" style="text-align:center;margin-top:12px;font-size:11.5px;direction:ltr">${esc(h.id)}</div>`;
   }
   const close = () => { me.view = null; renderDriverOverlay(); };
   [...drawer.querySelectorAll("[data-close]"), ...ov.querySelectorAll("[data-close]")].forEach((b) => b.onclick = close);
+  ov.querySelector("[data-tohist]")?.addEventListener("click", () => { me.view = "history"; renderDriverOverlay(); });
+  ov.querySelectorAll("[data-h]").forEach((el) => el.onclick = () => { me.viewTrip = el.dataset.h; me.view = "trip"; renderDriverOverlay(); });
   drawer.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => {
     if (b.dataset.go === "logout") { if (me.online) goOnline(false); store.del("ft-driver"); me.profile = null; me.view = null; renderDriver(); renderDriverOverlay(); return; }
     me.view = b.dataset.go; renderDriverOverlay();
+    if ((me.view === "history" || me.view === "earnings") && LIVE) meSyncHistory();
   });
 }
 
